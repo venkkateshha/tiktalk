@@ -2,6 +2,10 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { FeedFilter, FeedItemModel, FeedStatus, FeedState } from '../types';
 import { IFeedService, feedService } from '../service';
 import { NetworkError } from '../../../core/errors/AppError';
+import {
+  EngagementCoordinator,
+  engagementService,
+} from '../../../services/engagement';
 
 export interface UseFeedReturn extends FeedState {
   setFilter: (filter: FeedFilter) => void;
@@ -48,7 +52,25 @@ export function useFeed(
 
       try {
         const result = await service.getFeed(targetFilter, cursor, controller.signal);
-        setItems((prev) => (isAppend ? [...prev, ...result.items] : result.items));
+        const mappedItems = result.items.map((it) => {
+          const cached = EngagementCoordinator.getCachedState(it.id);
+          if (!cached) return it;
+          return {
+            ...it,
+            isLiked: cached.hasLiked,
+            isSaved: cached.hasBookmarked,
+            isReposted: cached.hasReposted,
+            engagement: {
+              ...it.engagement,
+              likeCount: cached.likeCount ?? it.engagement.likeCount,
+              bookmarkCount: cached.bookmarkCount ?? it.engagement.bookmarkCount,
+              repostCount: cached.repostCount ?? it.engagement.repostCount,
+              commentCount: cached.commentCount ?? it.engagement.commentCount,
+            },
+          };
+        });
+
+        setItems((prev) => (isAppend ? [...prev, ...mappedItems] : mappedItems));
         setHasMore(result.hasMore);
         setNextCursor(result.nextCursor);
 
@@ -91,6 +113,34 @@ export function useFeed(
     };
   }, [filter, fetchFeed]);
 
+  // Subscribe to EngagementCoordinator for cross-screen updates
+  useEffect(() => {
+    const unsubscribe = EngagementCoordinator.subscribe((event) => {
+      if (event.state) {
+        setItems((prev) =>
+          prev.map((i) => {
+            if (i.id !== event.postId) return i;
+            return {
+              ...i,
+              isLiked: event.state!.hasLiked ?? i.isLiked,
+              isSaved: event.state!.hasBookmarked ?? i.isSaved,
+              isReposted: event.state!.hasReposted ?? i.isReposted,
+              engagement: {
+                ...i.engagement,
+                likeCount: event.state!.likeCount ?? i.engagement.likeCount,
+                bookmarkCount: event.state!.bookmarkCount ?? i.engagement.bookmarkCount,
+                repostCount: event.state!.repostCount ?? i.engagement.repostCount,
+                commentCount: event.state!.commentCount ?? i.engagement.commentCount,
+              },
+            };
+          })
+        );
+      }
+    });
+
+    return unsubscribe;
+  }, []);
+
   const setFilter = useCallback((newFilter: FeedFilter) => {
     setFilterState(newFilter);
   }, []);
@@ -109,7 +159,12 @@ export function useFeed(
       const originalLiked = item.isLiked;
       const originalCount = item.engagement.likeCount;
       const nextLiked = !originalLiked;
-      const nextCount = nextLiked ? originalCount + 1 : Math.max(0, originalCount - 1);
+      const nextCount =
+        typeof originalCount === 'number'
+          ? nextLiked
+            ? originalCount + 1
+            : Math.max(0, originalCount - 1)
+          : undefined;
 
       // Apply optimistic update
       setItems((prev) =>
@@ -121,7 +176,10 @@ export function useFeed(
       );
 
       try {
-        await service.likePost(item.id, nextLiked);
+        await Promise.all([
+          service.likePost(item.id, nextLiked),
+          engagementService.toggleLike(item.id, originalLiked, originalCount),
+        ]);
       } catch {
         // Rollback on failure
         setItems((prev) =>
@@ -142,7 +200,12 @@ export function useFeed(
       const originalSaved = item.isSaved;
       const originalCount = item.engagement.bookmarkCount;
       const nextSaved = !originalSaved;
-      const nextCount = nextSaved ? originalCount + 1 : Math.max(0, originalCount - 1);
+      const nextCount =
+        typeof originalCount === 'number'
+          ? nextSaved
+            ? originalCount + 1
+            : Math.max(0, originalCount - 1)
+          : undefined;
 
       setItems((prev) =>
         prev.map((i) =>
@@ -153,7 +216,10 @@ export function useFeed(
       );
 
       try {
-        await service.savePost(item.id, nextSaved);
+        await Promise.all([
+          service.savePost(item.id, nextSaved),
+          engagementService.toggleSave(item.id, originalSaved, originalCount),
+        ]);
       } catch {
         setItems((prev) =>
           prev.map((i) =>
@@ -211,7 +277,10 @@ export function useFeed(
       );
 
       try {
-        await service.repostPost(item.id, nextReposted);
+        await Promise.all([
+          service.repostPost(item.id, nextReposted),
+          engagementService.toggleRepost(item.id, originalReposted, item.engagement.repostCount),
+        ]);
       } catch {
         setItems((prev) =>
           prev.map((i) =>

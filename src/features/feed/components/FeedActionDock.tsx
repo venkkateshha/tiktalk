@@ -76,7 +76,7 @@ export const FeedActionDock: React.FC<FeedActionDockProps> = ({
           color={item.isLiked ? brandColors.pink : brandColors.white}
         />
         <Text style={[styles.actionLabel, { color: brandColors.white }]}>
-          {item.engagement.likeCount > 0 ? String(item.engagement.likeCount) : 'Like'}
+          {(item.engagement.likeCount ?? 0) > 0 ? String(item.engagement.likeCount) : 'Like'}
         </Text>
       </TouchableOpacity>
 
@@ -95,7 +95,7 @@ export const FeedActionDock: React.FC<FeedActionDockProps> = ({
           color={brandColors.white}
         />
         <Text style={[styles.actionLabel, { color: brandColors.white }]}>
-          {item.engagement.commentCount > 0 ? String(item.engagement.commentCount) : 'Reply'}
+          {(item.engagement.commentCount ?? 0) > 0 ? String(item.engagement.commentCount) : 'Reply'}
         </Text>
       </TouchableOpacity>
 
@@ -115,7 +115,7 @@ export const FeedActionDock: React.FC<FeedActionDockProps> = ({
           color={item.isSaved ? brandColors.cyan : brandColors.white}
         />
         <Text style={[styles.actionLabel, { color: brandColors.white }]}>
-          {item.engagement.bookmarkCount > 0 ? String(item.engagement.bookmarkCount) : 'Save'}
+          {(item.engagement.bookmarkCount ?? 0) > 0 ? String(item.engagement.bookmarkCount) : 'Save'}
         </Text>
       </TouchableOpacity>
 
@@ -135,7 +135,9 @@ export const FeedActionDock: React.FC<FeedActionDockProps> = ({
           color={item.isReposted ? brandColors.cyan : brandColors.white}
         />
         <Text style={[styles.actionLabel, { color: brandColors.white }]}>
-          Repost
+          {item.engagement.repostCount && item.engagement.repostCount > 0
+            ? String(item.engagement.repostCount)
+            : 'Repost'}
         </Text>
       </TouchableOpacity>
 
@@ -154,7 +156,9 @@ export const FeedActionDock: React.FC<FeedActionDockProps> = ({
           color={brandColors.white}
         />
         <Text style={[styles.actionLabel, { color: brandColors.white }]}>
-          Share
+          {item.engagement.shareCount && item.engagement.shareCount > 0
+            ? String(item.engagement.shareCount)
+            : 'Share'}
         </Text>
       </TouchableOpacity>
 

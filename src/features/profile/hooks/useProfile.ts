@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { UserProfile, ProfileTab, ProfileVideoItem, ProfileStatus } from '../types';
 import { IProfileService, profileService, FollowCoordinator } from '../service';
+import { EngagementCoordinator } from '../../../services/engagement';
 
 export interface UseProfileReturn {
   profile: UserProfile | null;
@@ -104,6 +105,21 @@ export function useProfile(
     });
     return unsubscribe;
   }, [profile?.id]);
+
+  // Synchronize engagement updates (e.g. saving or liking a video)
+  useEffect(() => {
+    const unsubscribe = EngagementCoordinator.subscribe((event) => {
+      if (
+        (activeTab === 'saved' && event.type === 'save') ||
+        (activeTab === 'liked' && event.type === 'like')
+      ) {
+        if (profile) {
+          loadVideos(profile.id, activeTab);
+        }
+      }
+    });
+    return unsubscribe;
+  }, [profile?.id, activeTab, loadVideos]);
 
   const updateProfileOptimistic = useCallback((updater: Partial<UserProfile>) => {
     setProfile((prev) => (prev ? { ...prev, ...updater } : null));

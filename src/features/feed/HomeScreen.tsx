@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, StyleSheet, Dimensions } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import { useTheme } from '../../theme';
 import { BrandColors } from '../../theme/colors';
 import { Header } from '../../components/ui/Header';
@@ -10,10 +10,20 @@ import { useStories } from '../stories/hooks/useStories';
 import { VerticalVideoFeed } from './components/VerticalVideoFeed';
 import { FeedStateView } from './components/FeedStateView';
 import { FeedItemModel } from './types';
+import { CommentsSheet } from '../../components/engagement';
+import { shareService } from '../../services/engagement';
 
 export const HomeScreen: React.FC = () => {
-  const { theme } = useTheme();
+  const { theme, typography } = useTheme();
   const { openStories, openStoryCreation } = useNavigation();
+
+  const [activeCommentsPost, setActiveCommentsPost] = useState<FeedItemModel | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 2500);
+  };
 
   // Phase 2 Feed Hook (Manages domain models, state, optimistic updates, player lifecycle)
   const feed = useFeed('forYou');
@@ -58,11 +68,18 @@ export const HomeScreen: React.FC = () => {
   };
 
   const handleOpenComments = (item: FeedItemModel) => {
-    // Comments sheet boundary for future phase
+    setActiveCommentsPost(item);
   };
 
-  const handleShare = (item: FeedItemModel) => {
-    // Share sheet boundary for future phase
+  const handleShare = async (item: FeedItemModel) => {
+    const res = await shareService.sharePost({
+      postId: item.id,
+      caption: item.caption,
+      authorUsername: item.creator?.username,
+    });
+    if (res.message) {
+      showToast(res.message);
+    }
   };
 
   const hasFeedContent = feed.status === 'success' && feed.items.length > 0;
@@ -113,6 +130,27 @@ export const HomeScreen: React.FC = () => {
           />
         )}
       </View>
+
+      {/* 4. Comments Bottom Sheet (Video playback continues underneath uninterrupted) */}
+      {activeCommentsPost && (
+        <CommentsSheet
+          visible={Boolean(activeCommentsPost)}
+          postId={activeCommentsPost.id}
+          commentCount={activeCommentsPost.engagement.commentCount}
+          onClose={() => setActiveCommentsPost(null)}
+        />
+      )}
+
+      {/* Floating Toast Notice */}
+      {toastMessage && (
+        <View style={styles.toastContainer}>
+          <View style={[styles.toastCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.toastText, { color: BrandColors.cyan, fontSize: typography.fontSize.xs }]}>
+              {toastMessage}
+            </Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 };
@@ -125,5 +163,28 @@ const styles = StyleSheet.create({
     flex: 1,
     position: 'relative',
     overflow: 'hidden',
+  },
+  toastContainer: {
+    position: 'absolute',
+    top: 70,
+    left: 20,
+    right: 20,
+    alignItems: 'center',
+    zIndex: 999,
+  },
+  toastCard: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  toastText: {
+    fontWeight: '600',
+    textAlign: 'center',
   },
 });

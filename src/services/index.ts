@@ -9,3 +9,4 @@ export * from './notifications';
 export * from './analytics';
 export * from './storage';
 export * from './recommendations';
+export * from './engagement';
