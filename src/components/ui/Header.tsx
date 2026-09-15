@@ -4,6 +4,7 @@ import { useTheme } from '../../theme';
 import { BrandColors } from '../../theme/colors';
 import { FeedType } from '../../types';
 import { Ionicons } from '@expo/vector-icons';
+import { FeedHeaderTabs } from '../../features/feed/components/FeedHeaderTabs';
 
 interface HeaderProps {
   activeFeed: FeedType;
@@ -31,53 +32,10 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Center Feed Tabs (Following | For You) */}
       {showTabs ? (
-        <View style={styles.tabsContainer}>
-          <TouchableOpacity
-            onPress={() => onFeedChange('following')}
-            style={styles.tabButton}
-            activeOpacity={0.7}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                {
-                  color: activeFeed === 'following' ? theme.text : theme.textSecondary,
-                  fontWeight: activeFeed === 'following' ? '700' : '500',
-                  fontSize: typography.fontSize.base,
-                },
-              ]}
-            >
-              Following
-            </Text>
-            {activeFeed === 'following' && (
-              <View style={[styles.activeIndicator, { backgroundColor: BrandColors.cyan }]} />
-            )}
-          </TouchableOpacity>
-
-          <View style={styles.tabDivider} />
-
-          <TouchableOpacity
-            onPress={() => onFeedChange('forYou')}
-            style={styles.tabButton}
-            activeOpacity={0.7}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                {
-                  color: activeFeed === 'forYou' ? theme.text : theme.textSecondary,
-                  fontWeight: activeFeed === 'forYou' ? '700' : '500',
-                  fontSize: typography.fontSize.base,
-                },
-              ]}
-            >
-              For You
-            </Text>
-            {activeFeed === 'forYou' && (
-              <View style={[styles.activeIndicator, { backgroundColor: BrandColors.pink }]} />
-            )}
-          </TouchableOpacity>
-        </View>
+        <FeedHeaderTabs
+          activeFilter={activeFeed as any}
+          onFilterChange={onFeedChange as any}
+        />
       ) : (
         <View style={styles.titleContainer}>
           <Text style={[styles.screenTitle, { color: theme.text, fontSize: typography.fontSize.md }]}>

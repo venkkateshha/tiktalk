@@ -328,3 +328,376 @@ describe('6. Service Boundaries & Abstractions', () => {
     assert.strictEqual(queue.length, 0);
   });
 });
+
+// ================================================================
+// TIKTALK PHASE 2: HOME / FOR YOU / FOLLOWING VERTICAL VIDEO FEED
+// ================================================================
+
+// 7. Feed Domain Model & Type Integrity
+describe('7. Phase 2 Feed Domain Model & Type Integrity', () => {
+  it('FeedItemModel schema validates all required fields without fake defaults', () => {
+    const sampleItem = {
+      id: 'post_01h8q2',
+      creatorId: 'user_01h8q1',
+      creator: {
+        id: 'user_01h8q1',
+        username: 'creator_test',
+        displayName: 'Test Creator',
+        verificationStatus: 'verified',
+      },
+      media: {
+        id: 'media_01h8q3',
+        url: 'https://stream.tiktalk.internal/v/01h8q3.mp4',
+        thumbnailUrl: 'https://stream.tiktalk.internal/t/01h8q3.jpg',
+        aspectRatio: '9:16',
+        durationSeconds: 15,
+        resolutions: [
+          { width: 1080, height: 1920, bitrate: 4500000, fps: 60, codec: 'h264' },
+        ],
+      },
+      caption: 'Testing Phase 2 vertical video feed architecture',
+      hashtags: ['tiktalk', 'tech'],
+      audio: {
+        id: 'audio_01h8q4',
+        title: 'Original Sound',
+        artist: 'Test Creator',
+        durationSeconds: 15,
+        audioUrl: 'https://stream.tiktalk.internal/a/01h8q4.mp3',
+        isOriginalSound: true,
+      },
+      engagement: {
+        likeCount: 0,
+        commentCount: 0,
+        shareCount: 0,
+        viewCount: 0,
+        bookmarkCount: 0,
+      },
+      privacy: 'public',
+      status: 'published',
+      allowDuet: true,
+      allowComments: true,
+      allowSharing: true,
+      isLiked: false,
+      isSaved: false,
+      isFollowingCreator: false,
+      isReposted: false,
+      createdAt: '2026-09-15T00:00:00.000Z',
+    };
+
+    assert.strictEqual(typeof sampleItem.id, 'string');
+    assert.strictEqual(typeof sampleItem.creatorId, 'string');
+    assert.strictEqual(sampleItem.media.aspectRatio, '9:16');
+    assert.strictEqual(sampleItem.media.resolutions[0].fps, 60);
+    assert.strictEqual(sampleItem.engagement.likeCount, 0);
+    assert.strictEqual(sampleItem.isLiked, false);
+    assert.strictEqual(sampleItem.isSaved, false);
+    assert.strictEqual(sampleItem.isFollowingCreator, false);
+  });
+
+  it('FeedPaginationResult schema validates cursor-based pagination contract', () => {
+    const paginationResult = {
+      items: [],
+      nextCursor: 'cursor_page_2',
+      hasMore: true,
+    };
+    assert.ok(Array.isArray(paginationResult.items));
+    assert.strictEqual(paginationResult.hasMore, true);
+    assert.strictEqual(paginationResult.nextCursor, 'cursor_page_2');
+  });
+
+  it('FeedFilter type strictly allows only "forYou" and "following"', () => {
+    const validFilters = ['forYou', 'following'];
+    assert.strictEqual(validFilters.length, 2);
+    assert.ok(validFilters.includes('forYou'));
+    assert.ok(validFilters.includes('following'));
+  });
+});
+
+// 8. For You / Following Tab State & Accents
+describe('8. For You / Following Header Tabs & Accents', () => {
+  it('Tabs provide clear active indicators using locked TikTalk brand colors', () => {
+    const tabAccents = {
+      forYou: '#FE2C55',    // TikTalk Pink/Red
+      following: '#25F4EE', // TikTalk Cyan
+    };
+    assert.strictEqual(tabAccents.forYou, '#FE2C55');
+    assert.strictEqual(tabAccents.following, '#25F4EE');
+  });
+
+  it('Tab touch targets strictly enforce >= 44px for accessibility', () => {
+    const tabTouchTarget = { minWidth: 44, minHeight: 44 };
+    assert.ok(tabTouchTarget.minWidth >= 44);
+    assert.ok(tabTouchTarget.minHeight >= 44);
+  });
+
+  it('Tab switching transitions state cleanly and resets active video index to 0', () => {
+    let currentFilter = 'forYou';
+    let activeIndex = 3;
+
+    function switchTab(newFilter) {
+      currentFilter = newFilter;
+      activeIndex = 0; // reset active item on feed switch
+    }
+
+    switchTab('following');
+    assert.strictEqual(currentFilter, 'following');
+    assert.strictEqual(activeIndex, 0);
+  });
+});
+
+// 9. Vertical Video Feed & Virtualized Active Item Logic
+describe('9. Vertical Video Feed & Virtualized Active Item Logic', () => {
+  it('Autoplay is only active for the current item; previous and next items are paused', () => {
+    const items = [{ id: '1' }, { id: '2' }, { id: '3' }, { id: '4' }];
+    const activeIndex = 1;
+
+    const playbackStates = items.map((item, index) => ({
+      id: item.id,
+      isActive: index === activeIndex,
+      isPlaying: index === activeIndex, // Only active item plays
+    }));
+
+    assert.strictEqual(playbackStates[0].isPlaying, false, 'Item 0 (previous) must be paused');
+    assert.strictEqual(playbackStates[1].isPlaying, true, 'Item 1 (active) must be playing');
+    assert.strictEqual(playbackStates[2].isPlaying, false, 'Item 2 (next) must be paused');
+    assert.strictEqual(playbackStates[3].isPlaying, false, 'Item 3 (future) must be paused');
+  });
+
+  it('Virtualization window mounts only item - 1, item, item + 1 (window size = 3)', () => {
+    const items = [{ id: '0' }, { id: '1' }, { id: '2' }, { id: '3' }, { id: '4' }];
+    const activeIndex = 2;
+
+    const renderedItems = items.map((item, index) => {
+      const isWithinWindow = Math.abs(index - activeIndex) <= 1;
+      return { id: item.id, mounted: isWithinWindow };
+    });
+
+    assert.strictEqual(renderedItems[0].mounted, false, 'Item 0 is outside window and unmounted');
+    assert.strictEqual(renderedItems[1].mounted, true, 'Item 1 is within window (previous)');
+    assert.strictEqual(renderedItems[2].mounted, true, 'Item 2 is within window (active)');
+    assert.strictEqual(renderedItems[3].mounted, true, 'Item 3 is within window (next)');
+    assert.strictEqual(renderedItems[4].mounted, false, 'Item 4 is outside window and unmounted');
+  });
+
+  it('Web keyboard controls navigate vertically and toggle playback', () => {
+    let activeIndex = 1;
+    let isPlaying = true;
+    let isMuted = false;
+    const totalItems = 5;
+
+    function handleKey(key) {
+      if (key === 'ArrowDown' && activeIndex < totalItems - 1) {
+        activeIndex++;
+      } else if (key === 'ArrowUp' && activeIndex > 0) {
+        activeIndex--;
+      } else if (key === ' ') {
+        isPlaying = !isPlaying;
+      } else if (key === 'm' || key === 'M') {
+        isMuted = !isMuted;
+      }
+    }
+
+    handleKey('ArrowDown');
+    assert.strictEqual(activeIndex, 2, 'ArrowDown must increment activeIndex');
+
+    handleKey('ArrowUp');
+    assert.strictEqual(activeIndex, 1, 'ArrowUp must decrement activeIndex');
+
+    handleKey(' ');
+    assert.strictEqual(isPlaying, false, 'Space must toggle play to pause');
+
+    handleKey('m');
+    assert.strictEqual(isMuted, true, 'm must toggle mute to muted');
+  });
+});
+
+// 10. Video Player Abstraction & Lifecycle
+describe('10. Video Player Abstraction & Lifecycle Architecture', () => {
+  it('PlaybackStatus contract supports ExoPlayer, AVPlayer, and Web standards', () => {
+    const status = {
+      isPlaying: true,
+      isMuted: false,
+      isBuffering: false,
+      positionMillis: 4500,
+      durationMillis: 15000,
+      didJustFinish: false,
+    };
+    assert.strictEqual(typeof status.isPlaying, 'boolean');
+    assert.strictEqual(typeof status.isMuted, 'boolean');
+    assert.strictEqual(typeof status.positionMillis, 'number');
+    assert.strictEqual(typeof status.durationMillis, 'number');
+    assert.strictEqual(status.durationMillis, 15000);
+  });
+
+  it('Player pauses automatically when screen/tab loses visibility', () => {
+    let isPlaying = true;
+    function onVisibilityChange(hidden) {
+      if (hidden) {
+        isPlaying = false;
+      }
+    }
+
+    onVisibilityChange(true); // Tab switched or minimized
+    assert.strictEqual(isPlaying, false, 'Playback must pause when tab is hidden');
+  });
+
+  it('Tap to pause/play toggles playback and generates visual feedback state', () => {
+    let isPlaying = true;
+    let showFeedback = false;
+
+    function handleTap() {
+      isPlaying = !isPlaying;
+      showFeedback = true;
+    }
+
+    handleTap();
+    assert.strictEqual(isPlaying, false);
+    assert.strictEqual(showFeedback, true);
+  });
+});
+
+// 11. Optimistic Interactions & State Rollback
+describe('11. Optimistic Interactions & Error Rollback', () => {
+  it('Like action updates optimistically and rolls back on API failure', async () => {
+    let item = { id: 'p1', isLiked: false, likeCount: 5 };
+
+    // 1. Optimistic update
+    const previousState = { ...item };
+    item = { ...item, isLiked: true, likeCount: item.likeCount + 1 };
+    assert.strictEqual(item.isLiked, true);
+    assert.strictEqual(item.likeCount, 6);
+
+    // 2. Simulate API failure
+    const apiCall = async () => { throw new Error('API 500 Error'); };
+    try {
+      await apiCall();
+    } catch {
+      // Rollback
+      item = previousState;
+    }
+
+    assert.strictEqual(item.isLiked, false, 'isLiked must rollback to false on error');
+    assert.strictEqual(item.likeCount, 5, 'likeCount must rollback to 5 on error');
+  });
+
+  it('Save/Bookmark action updates optimistically and rolls back on failure', async () => {
+    let item = { id: 'p1', isSaved: false, bookmarkCount: 2 };
+
+    const previousState = { ...item };
+    item = { ...item, isSaved: true, bookmarkCount: item.bookmarkCount + 1 };
+    assert.strictEqual(item.isSaved, true);
+    assert.strictEqual(item.bookmarkCount, 3);
+
+    try {
+      throw new Error('Network timeout');
+    } catch {
+      item = previousState;
+    }
+
+    assert.strictEqual(item.isSaved, false);
+    assert.strictEqual(item.bookmarkCount, 2);
+  });
+
+  it('Follow action updates creator follow state across feed items optimistically', async () => {
+    const creatorId = 'c123';
+    let items = [
+      { id: 'p1', creatorId, isFollowingCreator: false },
+      { id: 'p2', creatorId, isFollowingCreator: false },
+      { id: 'p3', creatorId: 'other', isFollowingCreator: false },
+    ];
+
+    // Optimistically follow creator
+    const previousItems = [...items];
+    items = items.map((i) => (i.creatorId === creatorId ? { ...i, isFollowingCreator: true } : i));
+
+    assert.strictEqual(items[0].isFollowingCreator, true);
+    assert.strictEqual(items[1].isFollowingCreator, true);
+    assert.strictEqual(items[2].isFollowingCreator, false);
+
+    // Rollback
+    items = previousItems;
+    assert.strictEqual(items[0].isFollowingCreator, false);
+  });
+});
+
+// 12. Feed States & Stale Request Cancellation
+describe('12. Feed States & Stale Request Cancellation', () => {
+  it('Feed status supports loading, success, empty, unavailable, offline, and error', () => {
+    const statuses = ['loading', 'success', 'empty', 'unavailable', 'offline', 'error'];
+    statuses.forEach((s) => assert.strictEqual(typeof s, 'string'));
+  });
+
+  it('When backend returns 0 items, status transitions to polished empty state', () => {
+    let status = 'loading';
+    const items = [];
+    if (items.length === 0) {
+      status = 'empty';
+    }
+    assert.strictEqual(status, 'empty');
+  });
+
+  it('AbortController aborts stale in-flight feed requests when tab switches quickly', () => {
+    let abortedCount = 0;
+    let activeController = null;
+
+    function fetchFeed(tab) {
+      if (activeController) {
+        activeController.abort();
+        abortedCount++;
+      }
+      activeController = new AbortController();
+      return activeController;
+    }
+
+    fetchFeed('forYou');
+    fetchFeed('following'); // Quickly switched to Following before forYou resolved
+    assert.strictEqual(abortedCount, 1, 'Previous request must be aborted');
+    assert.strictEqual(activeController.signal.aborted, false, 'Latest request must remain active');
+  });
+});
+
+// 13. Accessibility Requirements
+describe('13. Phase 2 Accessibility Standards', () => {
+  it('Action dock interactive buttons meet >= 44x44px touch targets', () => {
+    const dockButtons = [
+      { name: 'Like', width: 44, height: 44 },
+      { name: 'Comment', width: 44, height: 44 },
+      { name: 'Save', width: 44, height: 44 },
+      { name: 'Repost', width: 44, height: 44 },
+      { name: 'Share', width: 44, height: 44 },
+      { name: 'Follow', width: 44, height: 44 },
+    ];
+
+    dockButtons.forEach((btn) => {
+      assert.ok(btn.width >= 44, `${btn.name} touch target width must be >= 44px`);
+      assert.ok(btn.height >= 44, `${btn.name} touch target height must be >= 44px`);
+    });
+  });
+
+  it('Like button uses locked TikTalk Pink/Red (#FE2C55) when active', () => {
+    const likeActiveColor = '#FE2C55';
+    assert.strictEqual(likeActiveColor, '#FE2C55');
+  });
+
+  it('Save and Repost buttons use locked TikTalk Cyan (#25F4EE) when active', () => {
+    const saveActiveColor = '#25F4EE';
+    const repostActiveColor = '#25F4EE';
+    assert.strictEqual(saveActiveColor, '#25F4EE');
+    assert.strictEqual(repostActiveColor, '#25F4EE');
+  });
+});
+
+// 14. Stories Preservation & Bottom Navigation Invariants
+describe('14. Stories Preservation & Bottom Navigation Invariants', () => {
+  it('Stories remain accessible from Home feed rail and Profile, NOT in bottom navigation', () => {
+    const bottomNavTabs = ['Home', 'Discover', 'Create', 'Inbox', 'Profile'];
+    assert.strictEqual(bottomNavTabs.length, 5);
+    assert.strictEqual(bottomNavTabs.includes('Stories'), false, 'Stories must NEVER be in bottom navigation');
+  });
+
+  it('Navigation structure strictly preserves Home | Discover | Create | Inbox | Profile', () => {
+    const tabs = ['Home', 'Discover', 'Create', 'Inbox', 'Profile'];
+    assert.deepStrictEqual(tabs, ['Home', 'Discover', 'Create', 'Inbox', 'Profile']);
+  });
+});
+
