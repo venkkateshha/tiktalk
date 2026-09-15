@@ -10,3 +10,4 @@ export * from './analytics';
 export * from './storage';
 export * from './recommendations';
 export * from './engagement';
+export * from './chat';

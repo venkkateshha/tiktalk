@@ -1,7 +1,8 @@
 /**
- * TikTalk Phase 8: useUnreadBadge Hook
+ * TikTalk Phase 9: useUnreadBadge Hook
  * Lightweight reactive hook for navigation indicators (BottomNav, WebSidebar).
- * Automatically updates when real notifications are received, read, or deleted.
+ * Combines real unread counts from both NotificationCoordinator (Activity)
+ * and ChatCoordinator (Direct & Group Messages).
  * Zero fake counts.
  */
 
@@ -10,39 +11,67 @@ import {
   NotificationCoordinator,
   notificationsService,
 } from '../../../services/notifications';
+import {
+  ChatCoordinator,
+  chatService,
+  ChatEvent,
+} from '../../../services/chat';
 
 export interface UseUnreadBadgeReturn {
   unreadCount: number;
+  activityUnreadCount: number;
+  messagesUnreadCount: number;
   hasUnread: boolean;
   badgeText: string;
 }
 
 export function useUnreadBadge(): UseUnreadBadgeReturn {
-  const [unreadCount, setUnreadCount] = useState<number>(() =>
+  const [activityUnread, setActivityUnread] = useState<number>(() =>
     NotificationCoordinator.getUnreadCount()
+  );
+  const [messagesUnread, setMessagesUnread] = useState<number>(() =>
+    ChatCoordinator.getUnreadMessagesCount()
   );
 
   useEffect(() => {
-    // Initial fetch of unread count if 0
-    notificationsService.getUnreadCount().then((count) => {
-      setUnreadCount(count);
+    // 1. Initial fetch of notifications unread count
+    notificationsService.getUnreadCount().then((count: number) => {
+      setActivityUnread(count);
     }).catch(() => {});
 
-    // Subscribe to real-time coordinator events
-    const unsubscribe = NotificationCoordinator.subscribe((event) => {
+    // 2. Initial fetch of messages unread count
+    chatService.getUnreadMessagesCount().then((count: number) => {
+      setMessagesUnread(count);
+    }).catch(() => {});
+
+    // 3. Subscribe to NotificationCoordinator events
+    const unsubNotif = NotificationCoordinator.subscribe((event) => {
       if (typeof event.unreadCount === 'number') {
-        setUnreadCount(event.unreadCount);
+        setActivityUnread(event.unreadCount);
       }
     });
 
-    return unsubscribe;
+    // 4. Subscribe to ChatCoordinator events
+    const unsubChat = ChatCoordinator.subscribe((event: ChatEvent) => {
+      if (typeof event.unreadMessagesCount === 'number') {
+        setMessagesUnread(event.unreadMessagesCount);
+      }
+    });
+
+    return () => {
+      unsubNotif();
+      unsubChat();
+    };
   }, []);
 
-  const hasUnread = unreadCount > 0;
-  const badgeText = unreadCount > 99 ? '99+' : unreadCount > 0 ? String(unreadCount) : '';
+  const totalUnread = activityUnread + messagesUnread;
+  const hasUnread = totalUnread > 0;
+  const badgeText = totalUnread > 99 ? '99+' : totalUnread > 0 ? String(totalUnread) : '';
 
   return {
-    unreadCount,
+    unreadCount: totalUnread,
+    activityUnreadCount: activityUnread,
+    messagesUnreadCount: messagesUnread,
     hasUnread,
     badgeText,
   };

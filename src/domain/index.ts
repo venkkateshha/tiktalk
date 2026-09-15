@@ -6,3 +6,4 @@ export * from './notification';
 export * from './auth';
 export * from './navigation';
 export * from './story';
+export * from './chat';
