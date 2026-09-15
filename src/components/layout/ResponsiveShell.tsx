@@ -11,11 +11,18 @@ import { CreateScreen } from '../../features/create/CreateScreen';
 import { InboxScreen } from '../../features/inbox/InboxScreen';
 import { ProfileScreen } from '../../features/profile/ProfileScreen';
 import { StoriesViewer } from '../../features/stories/StoriesViewer';
+import { CreateStoryModal } from '../../features/stories/components/CreateStoryModal';
 
 export const ResponsiveShell: React.FC = () => {
   const { width } = useWindowDimensions();
   const { theme } = useTheme();
-  const { activeTab, setActiveTab, activeStory } = useNavigation();
+  const {
+    activeTab,
+    setActiveTab,
+    activeStory,
+    isCreatingStory,
+    closeStoryCreation,
+  } = useNavigation();
 
   // Responsive Breakpoints:
   // - Mobile: width < 768
@@ -44,6 +51,14 @@ export const ResponsiveShell: React.FC = () => {
     <View style={[styles.rootContainer, { backgroundColor: theme.background }]}>
       {/* Stories Full-Screen Modal Viewer (Accessible from Home & Profile, NOT bottom tab) */}
       {activeStory && <StoriesViewer params={activeStory} />}
+
+      {/* Story Creation Flow Modal */}
+      {isCreatingStory && (
+        <CreateStoryModal
+          visible={isCreatingStory}
+          onClose={closeStoryCreation}
+        />
+      )}
 
       {isMobile ? (
         <SafeAreaView style={[styles.mobileContainer, { backgroundColor: theme.background }]}>

@@ -1,116 +1,236 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
-  TouchableOpacity,
   SafeAreaView,
+  TouchableWithoutFeedback,
   Platform,
+  ActivityIndicator,
+  Text,
+  TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme';
 import { useNavigation } from '../../navigation';
-import { Avatar } from '../../components/ui/Avatar';
 import { StoriesRouteParams } from '../../navigation/types';
+import { useStories } from './hooks/useStories';
+import { useStoryViewer } from './hooks/useStoryViewer';
+import {
+  StoryProgressBar,
+  StoryHeader,
+  StoryMediaView,
+  StoryBottomBar,
+  StoryViewersModal,
+} from './components';
 
 export interface StoriesViewerProps {
   params: StoriesRouteParams;
 }
 
 export const StoriesViewer: React.FC<StoriesViewerProps> = ({ params }) => {
-  const { theme, typography, brandColors } = useTheme();
+  const { brandColors, typography } = useTheme();
   const { closeStories } = useNavigation();
-  const [progress, setProgress] = useState(0.35);
+  const { storyGroups, status: storiesStatus, muteUser, refresh } = useStories();
+
+  const [isViewersModalOpen, setIsViewersModalOpen] = useState(false);
+
+  // Initialize interactive story viewer hook
+  const viewer = useStoryViewer({
+    userGroups: storyGroups,
+    initialUserId: params.userId,
+    initialStoryId: params.initialStoryId,
+    onClose: closeStories,
+  });
+
+  const {
+    currentGroup,
+    currentStory,
+    currentStoryIndex,
+    totalStoriesInGroup,
+    progress,
+    isMuted,
+    activeReaction,
+    togglePause,
+    pause,
+    resume,
+    toggleMute,
+    nextStory,
+    prevStory,
+    react,
+    unreact,
+    reply,
+    deleteCurrentStory,
+  } = viewer;
+
+  const isOwner =
+    currentGroup?.userId === 'me' ||
+    currentGroup?.username === 'tiktalk.creator' ||
+    currentStory?.creatorId === 'me' ||
+    currentStory?.creatorUsername === 'tiktalk.creator';
+
+  // Keyboard navigation on Web (Escape closes, Arrows navigate, Space pauses/resumes)
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept when typing in an input
+      const activeTag = document.activeElement?.tagName?.toLowerCase();
+      if (activeTag === 'input' || activeTag === 'textarea') {
+        if (e.key === 'Escape') {
+          (document.activeElement as HTMLElement)?.blur();
+        }
+        return;
+      }
+
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeStories();
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        nextStory();
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        prevStory();
+      } else if (e.key === ' ') {
+        e.preventDefault();
+        togglePause();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [closeStories, nextStory, prevStory, togglePause]);
+
+  // Loading or empty state handling
+  if ((storiesStatus === 'loading' || storiesStatus === 'idle') && storyGroups.length === 0) {
+    return (
+      <SafeAreaView style={[styles.overlay, { backgroundColor: brandColors.black }]}>
+        <View style={styles.centerLoading}>
+          <ActivityIndicator size="large" color={brandColors.cyan} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!currentGroup || !currentStory) {
+    return (
+      <SafeAreaView style={[styles.overlay, { backgroundColor: brandColors.black }]}>
+        <View style={styles.emptyContainer}>
+          <Ionicons name="sparkles-outline" size={48} color="rgba(255,255,255,0.4)" />
+          <Text style={[styles.emptyTitle, { color: brandColors.white }]}>
+            No Active Stories
+          </Text>
+          <Text style={styles.emptySubtitle}>
+            Stories expire after 24 hours. Check back later or create your own!
+          </Text>
+          <TouchableOpacity
+            onPress={closeStories}
+            style={[styles.closeEmptyBtn, { backgroundColor: brandColors.cyan }]}
+            accessible={true}
+            accessibilityRole="button"
+            accessibilityLabel="Close story viewer"
+          >
+            <Text style={{ color: brandColors.black, fontWeight: '700' }}>Close</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView
       style={[styles.overlay, { backgroundColor: brandColors.black }]}
       accessible={true}
       accessibilityRole="none"
-      accessibilityLabel={`Story viewer for user ${params.userId}`}
+      accessibilityLabel={`Story viewer for user ${currentGroup.username}`}
     >
-      {/* Top Story Header */}
-      <View style={styles.topBar}>
-        {/* Progress bar indicator */}
-        <View style={styles.progressBarContainer}>
-          <View
-            style={[
-              styles.progressBarActive,
-              { width: `${progress * 100}%`, backgroundColor: brandColors.cyan },
-            ]}
+      <View style={styles.responsiveWrapper}>
+        {/* 1. Top Bar: Progress Segments & Story Header */}
+        <View style={styles.topSection}>
+          <StoryProgressBar
+            totalStories={totalStoriesInGroup}
+            currentIndex={currentStoryIndex}
+            currentProgress={progress}
+          />
+          <StoryHeader
+            group={currentGroup}
+            story={currentStory}
+            isOwner={Boolean(isOwner)}
+            onClose={closeStories}
+            onMuteUser={() => muteUser(currentGroup.userId)}
+            onDeleteStory={async () => {
+              await deleteCurrentStory();
+              await refresh();
+            }}
+            onPause={pause}
+            onResume={resume}
           />
         </View>
 
-        <View style={styles.headerInfoRow}>
-          <View style={styles.userInfoRow}>
-            <Avatar name={params.userId} size="sm" isVerified={true} />
-            <View style={styles.userTextSlot}>
-              <Text style={[styles.userName, { color: brandColors.white, fontSize: typography.fontSize.sm }]}>
-                @{params.userId}
-              </Text>
-              <Text style={[styles.timestamp, { color: 'rgba(255,255,255,0.7)', fontSize: typography.fontSize.xs }]}>
-                2h ago • {params.entryPoint === 'home_rail' ? 'From Feed' : 'From Profile'}
-              </Text>
-            </View>
-          </View>
+        {/* 2. Center Media Canvas with Left/Right Touch Controls & Press-to-Pause */}
+        <View style={styles.viewportArea}>
+          <StoryMediaView
+            story={currentStory}
+            isMuted={isMuted}
+            onToggleMute={toggleMute}
+          />
 
-          {/* Close button */}
-          <TouchableOpacity
-            onPress={closeStories}
-            style={styles.closeButton}
+          {/* Left Tap Zone (Previous Story) */}
+          <TouchableWithoutFeedback
+            onPress={prevStory}
+            onPressIn={pause}
+            onPressOut={resume}
             accessible={true}
             accessibilityRole="button"
-            accessibilityLabel="Close stories"
-            activeOpacity={0.8}
+            accessibilityLabel="Previous story"
           >
-            <Ionicons name="close" size={24} color={brandColors.white} />
-          </TouchableOpacity>
-        </View>
-      </View>
+            <View style={styles.leftTapZone} />
+          </TouchableWithoutFeedback>
 
-      {/* Story Center Visual Viewport */}
-      <View style={styles.contentArea}>
-        <View style={styles.storyCard}>
-          <Ionicons name="sparkles" size={48} color={brandColors.cyan} />
-          <Text style={[styles.storyPrompt, { color: brandColors.white, fontSize: typography.fontSize.lg }]}>
-            Ephemeral Story View
-          </Text>
-          <Text
-            style={[
-              styles.storyNote,
-              { color: 'rgba(255,255,255,0.7)', fontSize: typography.fontSize.sm },
-            ]}
+          {/* Right Tap Zone (Next Story) */}
+          <TouchableWithoutFeedback
+            onPress={nextStory}
+            onPressIn={pause}
+            onPressOut={resume}
+            accessible={true}
+            accessibilityRole="button"
+            accessibilityLabel="Next story"
           >
-            Stories expire after 24 hours. Accessible from Home Feed and Profile.
-          </Text>
+            <View style={styles.rightTapZone} />
+          </TouchableWithoutFeedback>
         </View>
-      </View>
 
-      {/* Bottom Action / Reply bar */}
-      <View style={styles.bottomBar}>
-        <View style={styles.replyInputSlot}>
-          <Text style={[styles.replyPlaceholder, { color: 'rgba(255,255,255,0.5)', fontSize: typography.fontSize.sm }]}>
-            Send a message to @{params.userId}...
-          </Text>
+        {/* 3. Bottom Bar: Reactions, Reply Input, Owner View Count */}
+        <View style={styles.bottomSection}>
+          <StoryBottomBar
+            story={currentStory}
+            isOwner={Boolean(isOwner)}
+            activeReaction={activeReaction}
+            onReact={react}
+            onUnreact={unreact}
+            onReply={reply}
+            onOpenViewers={() => {
+              pause();
+              setIsViewersModalOpen(true);
+            }}
+            onPause={pause}
+            onResume={resume}
+          />
         </View>
-        <TouchableOpacity
-          onPress={() => {}}
-          style={styles.actionIcon}
-          accessible={true}
-          accessibilityRole="button"
-          accessibilityLabel="Like story"
-        >
-          <Ionicons name="heart-outline" size={26} color={brandColors.pink} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => {}}
-          style={styles.actionIcon}
-          accessible={true}
-          accessibilityRole="button"
-          accessibilityLabel="Share story"
-        >
-          <Ionicons name="paper-plane-outline" size={24} color={brandColors.white} />
-        </TouchableOpacity>
+
+        {/* 4. Owner Viewers Sheet Modal */}
+        {isOwner && (
+          <StoryViewersModal
+            visible={isViewersModalOpen}
+            storyId={currentStory.id}
+            onClose={() => {
+              setIsViewersModalOpen(false);
+              resume();
+            }}
+          />
+        )}
       </View>
     </SafeAreaView>
   );
@@ -124,93 +244,79 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     zIndex: 9999,
-    justifyContent: 'space-between',
-  },
-  topBar: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-  },
-  progressBarContainer: {
-    height: 3,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    borderRadius: 2,
-    overflow: 'hidden',
-    marginBottom: 12,
-  },
-  progressBarActive: {
-    height: '100%',
-  },
-  headerInfoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  userInfoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  userTextSlot: {
-    marginLeft: 10,
-  },
-  userName: {
-    fontWeight: '700',
-  },
-  timestamp: {
-    fontWeight: '400',
-  },
-  closeButton: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
     justifyContent: 'center',
-  },
-  contentArea: {
-    flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
   },
-  storyCard: {
-    alignItems: 'center',
-    padding: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    maxWidth: 380,
+  responsiveWrapper: {
     width: '100%',
+    height: '100%',
+    maxWidth: 440, // Centered 9:16 ratio on web and tablet
+    alignSelf: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#000000',
+    overflow: 'hidden',
   },
-  storyPrompt: {
-    fontWeight: '700',
-    marginTop: 16,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  storyNote: {
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  bottomBar: {
-    flexDirection: 'row',
+  centerLoading: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingBottom: 24,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
     gap: 12,
   },
-  replyInputSlot: {
-    flex: 1,
-    height: 44,
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  emptySubtitle: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  closeEmptyBtn: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
     borderRadius: 22,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-    paddingHorizontal: 16,
+    minHeight: 44,
     justifyContent: 'center',
-  },
-  replyPlaceholder: {
-    fontWeight: '400',
-  },
-  actionIcon: {
-    width: 44,
-    height: 44,
     alignItems: 'center',
+  },
+  topSection: {
+    width: '100%',
+    paddingTop: 8,
+    zIndex: 20,
+  },
+  viewportArea: {
+    flex: 1,
+    width: '100%',
+    position: 'relative',
     justifyContent: 'center',
+    alignItems: 'center',
+  },
+  leftTapZone: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    bottom: 0,
+    width: '35%',
+    zIndex: 10,
+  },
+  rightTapZone: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    width: '65%',
+    zIndex: 10,
+  },
+  bottomSection: {
+    width: '100%',
+    zIndex: 20,
   },
 });

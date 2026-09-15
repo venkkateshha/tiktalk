@@ -19,6 +19,10 @@ export interface NavigationContextValue {
   activeStory: StoriesRouteParams | null;
   openStories: (params: StoriesRouteParams) => void;
   closeStories: () => void;
+  isCreatingStory: boolean;
+  openStoryCreation: () => void;
+  closeStoryCreation: () => void;
   canGoBack: boolean;
   goBack: () => void;
 }
+

@@ -11,7 +11,10 @@ export type NotificationType =
   | 'follow'
   | 'system'
   | 'monetization'
-  | 'story_reply';
+  | 'story_reply'
+  | 'story_view'
+  | 'story_reaction'
+  | 'story_expiry';
 
 export interface AppNotification {
   id: string;
@@ -22,7 +25,7 @@ export interface AppNotification {
   title: string;
   body: string;
   targetId?: string; // ID of post, comment, or transaction
-  targetType?: 'post' | 'comment' | 'profile' | 'wallet';
+  targetType?: 'post' | 'comment' | 'profile' | 'wallet' | 'story';
   isRead: boolean;
   createdAt: string;
 }

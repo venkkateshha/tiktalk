@@ -10,6 +10,7 @@ export const NavigationProvider: React.FC<{ children: React.ReactNode; initialTa
   const [activeTab, setActiveTabState] = useState<NavigationTab>(initialTab);
   const [history, setHistory] = useState<NavigationTab[]>([initialTab]);
   const [activeStory, setActiveStory] = useState<StoriesRouteParams | null>(null);
+  const [isCreatingStory, setIsCreatingStory] = useState<boolean>(false);
 
   const setActiveTab = useCallback((tab: NavigationTab) => {
     setActiveTabState(tab);
@@ -24,9 +25,21 @@ export const NavigationProvider: React.FC<{ children: React.ReactNode; initialTa
     setActiveStory(null);
   }, []);
 
+  const openStoryCreation = useCallback(() => {
+    setIsCreatingStory(true);
+  }, []);
+
+  const closeStoryCreation = useCallback(() => {
+    setIsCreatingStory(false);
+  }, []);
+
   const canGoBack = history.length > 1;
 
   const goBack = useCallback(() => {
+    if (isCreatingStory) {
+      closeStoryCreation();
+      return;
+    }
     if (activeStory) {
       closeStories();
       return;
@@ -37,7 +50,7 @@ export const NavigationProvider: React.FC<{ children: React.ReactNode; initialTa
       setHistory(newHistory);
       setActiveTabState(prevTab);
     }
-  }, [history, activeStory, closeStories]);
+  }, [history, activeStory, closeStories, isCreatingStory, closeStoryCreation]);
 
   const value = useMemo<NavigationContextValue>(
     () => ({
@@ -46,10 +59,24 @@ export const NavigationProvider: React.FC<{ children: React.ReactNode; initialTa
       activeStory,
       openStories,
       closeStories,
+      isCreatingStory,
+      openStoryCreation,
+      closeStoryCreation,
       canGoBack,
       goBack,
     }),
-    [activeTab, setActiveTab, activeStory, openStories, closeStories, canGoBack, goBack]
+    [
+      activeTab,
+      setActiveTab,
+      activeStory,
+      openStories,
+      closeStories,
+      isCreatingStory,
+      openStoryCreation,
+      closeStoryCreation,
+      canGoBack,
+      goBack,
+    ]
   );
 
   return <NavigationContext.Provider value={value}>{children}</NavigationContext.Provider>;

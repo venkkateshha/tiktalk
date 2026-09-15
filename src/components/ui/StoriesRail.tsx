@@ -21,14 +21,18 @@ export interface StorySummary {
 
 export interface StoriesRailProps {
   stories?: StorySummary[];
+  userHasStory?: boolean;
   onSelectStory?: (story: StorySummary) => void;
   onAddStory?: () => void;
+  onViewUserStory?: () => void;
 }
 
 export const StoriesRail: React.FC<StoriesRailProps> = ({
   stories = [],
+  userHasStory = false,
   onSelectStory,
   onAddStory,
+  onViewUserStory,
 }) => {
   const { theme, typography, spacing, brandColors } = useTheme();
 
@@ -46,23 +50,41 @@ export const StoriesRail: React.FC<StoriesRailProps> = ({
       >
         {/* Your Story / Add Story Slot */}
         <TouchableOpacity
-          onPress={onAddStory}
+          onPress={() => {
+            if (userHasStory && onViewUserStory) {
+              onViewUserStory();
+            } else {
+              onAddStory?.();
+            }
+          }}
           activeOpacity={0.8}
           accessible={true}
           accessibilityRole="button"
-          accessibilityLabel="Add to your story"
+          accessibilityLabel={userHasStory ? "View your story" : "Add to your story"}
           style={styles.storyItem}
         >
           <View style={styles.addStoryAvatarWrapper}>
-            <Avatar name="You" size="md" hasStory={false} />
-            <View
+            <Avatar
+              name="You"
+              size="md"
+              hasStory={userHasStory}
+              isStoryViewed={false}
+            />
+            <TouchableOpacity
+              onPress={(e) => {
+                e.stopPropagation?.();
+                onAddStory?.();
+              }}
               style={[
                 styles.addBadge,
                 { backgroundColor: brandColors.cyan, borderColor: theme.background },
               ]}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel="Add new story"
             >
               <Ionicons name="add" size={14} color={brandColors.black} />
-            </View>
+            </TouchableOpacity>
           </View>
           <Text
             numberOfLines={1}

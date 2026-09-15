@@ -15,6 +15,8 @@ import {
   FollowListModal,
   ProfileStateView,
 } from './components';
+import { useStories } from '../stories/hooks/useStories';
+import { StoryHighlightsBar, StoryArchiveModal } from '../stories/components';
 
 export interface ProfileScreenProps {
   userId?: string;
@@ -22,7 +24,7 @@ export interface ProfileScreenProps {
 
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId }) => {
   const { theme, typography } = useTheme();
-  const { openStories } = useNavigation();
+  const { openStories, openStoryCreation } = useNavigation();
 
   const {
     profile,
@@ -37,6 +39,16 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId }) => {
     updateProfileOptimistic,
   } = useProfile(userId);
 
+  const stories = useStories();
+  const hasActiveStory = isOwner
+    ? stories.hasUserStory
+    : Boolean(
+        profile &&
+          stories.storyGroups.some(
+            (g) => g.userId === profile.id || g.username === profile.username
+          )
+      );
+
   const {
     followState,
     toggleFollow,
@@ -47,6 +59,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId }) => {
   );
 
   const [isEditModalVisible, setIsEditModalVisible] = useState<boolean>(false);
+  const [isArchiveOpen, setIsArchiveOpen] = useState<boolean>(false);
   const [followModalConfig, setFollowModalConfig] = useState<{
     visible: boolean;
     type: 'followers' | 'following';
@@ -63,10 +76,14 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId }) => {
 
   const handleOpenStory = () => {
     if (!profile) return;
-    openStories({
-      userId: profile.username,
-      entryPoint: 'profile_avatar',
-    });
+    if (hasActiveStory) {
+      openStories({
+        userId: isOwner ? 'me' : profile.username,
+        entryPoint: 'profile_avatar',
+      });
+    } else if (isOwner) {
+      openStoryCreation();
+    }
   };
 
   const handleShareProfile = () => {
@@ -75,11 +92,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId }) => {
 
   return (
     <View
-      style={[styles.container, { backgroundColor: theme.background }]}
-      accessible={true}
-      accessibilityRole="none"
-      accessibilityLabel="Profile screen"
-    >
+      style={[styles.container, { backgroundColor: theme.background }]}>
       <Header
         activeFeed="forYou"
         onFeedChange={() => {}}
@@ -103,13 +116,13 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId }) => {
           {/* 1. Profile Header (Avatar, Names, Stats, Bio, Link) */}
           <ProfileHeaderView
             profile={profile}
-            hasActiveStory={true}
+            hasActiveStory={hasActiveStory}
             onOpenStory={handleOpenStory}
             onOpenFollowers={() => setFollowModalConfig({ visible: true, type: 'followers' })}
             onOpenFollowing={() => setFollowModalConfig({ visible: true, type: 'following' })}
           />
 
-          {/* 2. Actions Dock (Follow / Edit Profile / Share) */}
+          {/* 2. Actions Dock (Follow / Edit Profile / Share / Archive for owner) */}
           <ProfileActionsDock
             isOwner={isOwner}
             followState={followState}
@@ -118,10 +131,23 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId }) => {
             onShareProfile={handleShareProfile}
             onToggleFollow={toggleFollow}
             onMessage={() => showToast('Direct messaging is available in Inbox')}
-            onOptions={() => showToast('More profile options')}
+            onOptions={() => {
+              if (isOwner) {
+                setIsArchiveOpen(true);
+              } else {
+                showToast('More profile options');
+              }
+            }}
           />
 
-          {/* 3. Creator Economics Foundation Card (for owner creator profiles) */}
+          {/* 3. Story Highlights Bar (Foundation for profile highlights) */}
+          <StoryHighlightsBar
+            userId={profile.id}
+            isOwner={isOwner}
+            onSelectHighlight={(hl) => showToast(`Viewing highlight: ${hl.title}`)}
+          />
+
+          {/* 4. Creator Economics Foundation Card (for owner creator profiles) */}
           {profile.isCreator && isOwner && (
             <CreatorEconomicsCard
               onOpenStudio={() => showToast('Creator Studio foundation active')}
@@ -129,7 +155,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId }) => {
             />
           )}
 
-          {/* 4. Content Grid or Private Locked State */}
+          {/* 5. Content Grid or Private Locked State */}
           {status === 'private_locked' ? (
             <ProfileStateView status="private_locked" />
           ) : (
@@ -177,6 +203,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId }) => {
               setFollowModalConfig((prev) => ({ ...prev, visible: false }));
               showToast(`Viewing @${u.username}`);
             }}
+          />
+
+          <StoryArchiveModal
+            visible={isArchiveOpen}
+            onClose={() => setIsArchiveOpen(false)}
           />
         </>
       )}

@@ -6,23 +6,29 @@ import { Header } from '../../components/ui/Header';
 import { StoriesRail, StorySummary } from '../../components/ui/StoriesRail';
 import { useNavigation } from '../../navigation';
 import { useFeed } from './hooks/useFeed';
+import { useStories } from '../stories/hooks/useStories';
 import { VerticalVideoFeed } from './components/VerticalVideoFeed';
 import { FeedStateView } from './components/FeedStateView';
 import { FeedItemModel } from './types';
 
 export const HomeScreen: React.FC = () => {
   const { theme } = useTheme();
-  const { openStories } = useNavigation();
+  const { openStories, openStoryCreation } = useNavigation();
 
   // Phase 2 Feed Hook (Manages domain models, state, optimistic updates, player lifecycle)
   const feed = useFeed('forYou');
 
-  // Stories system: Preserved strictly from Phase 1 (Home rail + Profile, NOT bottom navigation)
-  const storiesList: StorySummary[] = [
-    { userId: 'tiktalk', username: 'TikTalk', hasUnseenStories: true },
-    { userId: 'creator_hub', username: 'CreatorHub', hasUnseenStories: true },
-    { userId: 'music_lab', username: 'MusicLab', hasUnseenStories: false },
-  ];
+  // Phase 6 Unified Stories System: Powered by real service & local persistence
+  const stories = useStories();
+
+  const followedStoriesList: StorySummary[] = stories.storyGroups
+    .filter((g) => g.userId !== 'me' && g.username !== 'tiktalk.creator')
+    .map((g) => ({
+      userId: g.userId,
+      username: g.username,
+      avatarUrl: g.avatarUrl,
+      hasUnseenStories: g.hasUnseenStories,
+    }));
 
   const handleSelectStory = (story: StorySummary) => {
     openStories({
@@ -32,8 +38,12 @@ export const HomeScreen: React.FC = () => {
   };
 
   const handleAddStory = () => {
+    openStoryCreation();
+  };
+
+  const handleViewUserStory = () => {
     openStories({
-      userId: 'current_user',
+      userId: 'me',
       entryPoint: 'home_rail',
     });
   };
@@ -67,9 +77,11 @@ export const HomeScreen: React.FC = () => {
 
       {/* 2. Stories Rail: Preserved from Phase 1, accessible right on Home Feed */}
       <StoriesRail
-        stories={storiesList}
+        stories={followedStoriesList}
+        userHasStory={stories.hasUserStory}
         onSelectStory={handleSelectStory}
         onAddStory={handleAddStory}
+        onViewUserStory={handleViewUserStory}
       />
 
       {/* 3. Main Vertical Video Feed Viewport */}
