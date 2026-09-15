@@ -1,199 +1,320 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  SafeAreaView,
+  Dimensions,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme';
 import { BrandColors } from '../../theme/colors';
-import { Badge } from '../../components/ui/Badge';
-import { Ionicons } from '@expo/vector-icons';
+import { useCreateWorkflow } from './hooks/useCreateWorkflow';
+import {
+  CreateHubView,
+  CameraCaptureView,
+  VideoPreviewPlayer,
+  VideoEditToolbar,
+  CaptionEditorModal,
+  AudioPickerModal,
+  CoverPickerModal,
+  PublishDetailsView,
+  DraftsListView,
+  UploadProgressModal,
+} from './components';
+import { A11yStandards } from '../../core/a11y/a11yStandards';
 
 export const CreateScreen: React.FC = () => {
-  const { typography } = useTheme();
-  const [duration, setDuration] = useState<'15s' | '60s' | '3m'>('15s');
-  const [speed, setSpeed] = useState<'0.5x' | '1x' | '2x'>('1x');
+  const { theme, typography } = useTheme();
+  const workflow = useCreateWorkflow();
+
+  const [showCaptionsModal, setShowCaptionsModal] = useState<boolean>(false);
+  const [showAudioModal, setShowAudioModal] = useState<boolean>(false);
+  const [showCoverModal, setShowCoverModal] = useState<boolean>(false);
+  const [draftSavedMessage, setDraftSavedMessage] = useState<string | null>(null);
+
+  const handleSaveDraft = async () => {
+    const d = await workflow.saveCurrentDraft();
+    if (d) {
+      setDraftSavedMessage('Draft saved!');
+      setTimeout(() => setDraftSavedMessage(null), 2000);
+    }
+  };
 
   return (
-    <View style={styles.container}>
-      {/* Top Controls: Sound Selector */}
-      <View style={styles.topBar}>
-        <TouchableOpacity style={styles.soundPill} activeOpacity={0.8}>
-          <Ionicons name="musical-notes" size={16} color={BrandColors.white} />
-          <Text style={[styles.soundText, { fontSize: typography.fontSize.xs }]}>
-            Add Sound • Waveform Sync
-          </Text>
-        </TouchableOpacity>
-      </View>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+      {/* 1. CREATE HUB VIEW */}
+      {workflow.mode === 'hub' && (
+        <CreateHubView
+          onRecordVideo={workflow.startCamera}
+          onUploadVideo={workflow.pickFromGallery}
+          onOpenDrafts={workflow.showDrafts}
+          draftsCount={workflow.drafts.length}
+        />
+      )}
 
-      {/* Right HUD Controls */}
-      <View style={styles.rightHud}>
-        <TouchableOpacity style={styles.hudItem}>
-          <Ionicons name="camera-reverse-outline" size={26} color={BrandColors.white} />
-          <Text style={styles.hudLabel}>Flip</Text>
-        </TouchableOpacity>
+      {/* 2. CAMERA CAPTURE VIEW */}
+      {workflow.mode === 'camera' && (
+        <CameraCaptureView
+          onCancel={workflow.goToHub}
+          onCompleteCapture={workflow.proceedToEdit}
+          onOpenGallery={workflow.pickFromGallery}
+        />
+      )}
 
-        <TouchableOpacity style={styles.hudItem} onPress={() => setSpeed(speed === '1x' ? '2x' : speed === '2x' ? '0.5x' : '1x')}>
-          <Ionicons name="speedometer-outline" size={26} color={BrandColors.cyan} />
-          <Text style={[styles.hudLabel, { color: BrandColors.cyan }]}>{speed}</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.hudItem}>
-          <Ionicons name="timer-outline" size={26} color={BrandColors.white} />
-          <Text style={styles.hudLabel}>Timer</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.hudItem}>
-          <Ionicons name="color-wand-outline" size={26} color={BrandColors.pink} />
-          <Text style={[styles.hudLabel, { color: BrandColors.pink }]}>Beauty</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.hudItem}>
-          <Ionicons name="duplicate-outline" size={26} color={BrandColors.white} />
-          <Text style={styles.hudLabel}>Duet</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Center Camera Preview Area */}
-      <View style={styles.centerCanvas}>
-        <View style={styles.badgeWrapper}>
-          <Badge label="VisionCamera • Phase 0 Shell" variant="primary" />
-        </View>
-        <Text style={[styles.cameraTitle, { fontSize: typography.fontSize.lg }]}>
-          Creator Studio Ready
-        </Text>
-        <Text style={[styles.cameraSubtitle, { fontSize: typography.fontSize.xs }]}>
-          Frame Processors • PTS Audio Sync • 720p H.265 Hardware Transcoding
-        </Text>
-      </View>
-
-      {/* Bottom Duration Selector and Record Shutter */}
-      <View style={styles.bottomControls}>
-        <View style={styles.durationRow}>
-          {(['15s', '60s', '3m'] as const).map((d) => (
+      {/* 3. VIDEO EDIT VIEW */}
+      {workflow.mode === 'edit' && workflow.selectedAsset && (
+        <View style={styles.editLayout}>
+          {/* Top Header */}
+          <View style={[styles.editHeader, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <TouchableOpacity
-              key={d}
-              style={[styles.durationTab, duration === d && styles.durationTabActive]}
-              onPress={() => setDuration(d)}
+              onPress={workflow.goToHub}
+              style={[styles.headerBtn, A11yStandards.minTouchTarget]}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel="Discard video and return to create hub"
             >
-              <Text style={[styles.durationText, duration === d && styles.durationTextActive]}>
-                {d}
+              <Ionicons name="close" size={24} color={theme.text} />
+            </TouchableOpacity>
+
+            {/* Save draft button in middle */}
+            <TouchableOpacity
+              onPress={handleSaveDraft}
+              style={[styles.draftHeaderBtn, A11yStandards.minTouchTarget]}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel="Save video draft"
+            >
+              <Ionicons name="save-outline" size={18} color={BrandColors.cyan} />
+              <Text style={[styles.draftHeaderText, { color: BrandColors.cyan, fontSize: typography.fontSize.xs }]}>
+                {draftSavedMessage || 'Save Draft'}
               </Text>
             </TouchableOpacity>
-          ))}
-        </View>
 
-        {/* Shutter Button */}
-        <View style={styles.shutterRow}>
-          <TouchableOpacity style={styles.shutterOuter} activeOpacity={0.8}>
-            <View style={styles.shutterInner} />
-          </TouchableOpacity>
+            {/* Next Button to proceed to details */}
+            <TouchableOpacity
+              onPress={workflow.proceedToDetails}
+              style={[styles.nextBtn, A11yStandards.minTouchTarget, { backgroundColor: BrandColors.pink }]}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel="Proceed to post details"
+            >
+              <Text style={[styles.nextBtnText, { fontSize: typography.fontSize.sm }]}>Next</Text>
+              <Ionicons name="chevron-forward" size={18} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Center Video Player Preview */}
+          <View style={styles.previewContainer}>
+            <VideoPreviewPlayer
+              asset={workflow.selectedAsset}
+              playbackSpeed={workflow.editState.playbackSpeed}
+              isMuted={workflow.editState.isMuted}
+              trimStartSeconds={workflow.editState.trimStartSeconds}
+              trimEndSeconds={workflow.editState.trimEndSeconds}
+              onToggleMute={() =>
+                workflow.updateEditState({ isMuted: !workflow.editState.isMuted })
+              }
+            />
+
+            {/* Optional Floating Caption Overlay */}
+            {workflow.editState.captionConfig.enabled && workflow.editState.captionConfig.text ? (
+              <View
+                style={[
+                  styles.captionOverlay,
+                  workflow.editState.captionConfig.position === 'top' && styles.captionTop,
+                  workflow.editState.captionConfig.position === 'center' && styles.captionCenter,
+                  workflow.editState.captionConfig.position === 'bottom' && styles.captionBottom,
+                ]}
+                pointerEvents="none"
+              >
+                <Text
+                  style={[
+                    styles.captionText,
+                    workflow.editState.captionConfig.style === 'neon' && styles.captionNeon,
+                    workflow.editState.captionConfig.style === 'bold' && styles.captionBold,
+                    workflow.editState.captionConfig.style === 'minimal' && styles.captionMinimal,
+                  ]}
+                >
+                  {workflow.editState.captionConfig.text}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+
+          {/* Bottom Editing HUD */}
+          <VideoEditToolbar
+            editState={workflow.editState}
+            maxDuration={workflow.selectedAsset.durationSeconds || 15}
+            onUpdateEditState={workflow.updateEditState}
+            onOpenCaptions={() => setShowCaptionsModal(true)}
+            onOpenAudio={() => setShowAudioModal(true)}
+            onOpenCover={() => setShowCoverModal(true)}
+          />
+
+          {/* Modals */}
+          <CaptionEditorModal
+            visible={showCaptionsModal}
+            initialConfig={workflow.editState.captionConfig}
+            onSave={(cfg) => workflow.updateEditState({ captionConfig: cfg })}
+            onClose={() => setShowCaptionsModal(false)}
+          />
+
+          <AudioPickerModal
+            visible={showAudioModal}
+            currentAudio={workflow.editState.audioSelection}
+            isMuted={workflow.editState.isMuted}
+            volume={workflow.editState.volume}
+            onSelectAudio={(audio) => workflow.updateEditState({ audioSelection: audio })}
+            onUpdateVolume={(vol) => workflow.updateEditState({ volume: vol })}
+            onToggleMute={() => workflow.updateEditState({ isMuted: !workflow.editState.isMuted })}
+            onClose={() => setShowAudioModal(false)}
+          />
+
+          <CoverPickerModal
+            visible={showCoverModal}
+            coverConfig={workflow.editState.coverConfig}
+            durationSeconds={workflow.selectedAsset.durationSeconds || 15}
+            onSave={(cover) => workflow.updateEditState({ coverConfig: cover })}
+            onClose={() => setShowCoverModal(false)}
+          />
         </View>
-      </View>
-    </View>
+      )}
+
+      {/* 4. PUBLISH DETAILS VIEW */}
+      {workflow.mode === 'details' && (
+        <PublishDetailsView
+          publishConfig={workflow.publishConfig}
+          onUpdatePublishConfig={workflow.updatePublishConfig}
+          onBackToEdit={workflow.backToEdit}
+          onSaveDraft={async () => {
+            await workflow.saveCurrentDraft();
+          }}
+          onPublish={workflow.publishCurrent}
+          isPublishing={workflow.uploadState === 'publishing' || workflow.uploadState === 'uploading'}
+        />
+      )}
+
+      {/* 5. DRAFTS LIST VIEW */}
+      {workflow.mode === 'drafts' && (
+        <DraftsListView
+          drafts={workflow.drafts}
+          onSelectDraft={workflow.resumeDraft}
+          onDeleteDraft={workflow.deleteDraft}
+          onBack={workflow.goToHub}
+          onCreateNew={workflow.startCamera}
+        />
+      )}
+
+      {/* 6. UPLOAD PROGRESS & ERROR MODAL */}
+      <UploadProgressModal
+        uploadState={workflow.uploadState}
+        uploadProgress={workflow.uploadProgress}
+        errorMessage={workflow.errorMessage}
+        onCancel={workflow.cancelUpload}
+        onDismiss={workflow.resetWorkflow}
+        onRetry={workflow.publishCurrent}
+      />
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: BrandColors.black,
-    justifyContent: 'space-between',
-    paddingVertical: 16,
   },
-  topBar: {
-    alignItems: 'center',
-    paddingTop: 8,
+  editLayout: {
+    flex: 1,
+    position: 'relative',
+    backgroundColor: '#000000',
   },
-  soundPill: {
+  editHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(26, 26, 26, 0.85)',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: BrandColors.darkBorder,
-  },
-  soundText: {
-    color: BrandColors.white,
-    marginLeft: 8,
-    fontWeight: '600',
-  },
-  rightHud: {
-    position: 'absolute',
-    right: 16,
-    top: 60,
-    gap: 18,
-    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
     zIndex: 10,
   },
-  hudItem: {
+  headerBtn: {
     alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 44,
+    minHeight: 44,
   },
-  hudLabel: {
-    color: BrandColors.white,
-    fontSize: 10,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  centerCanvas: {
-    alignItems: 'center',
-    paddingHorizontal: 24,
-  },
-  badgeWrapper: {
-    marginBottom: 8,
-  },
-  cameraTitle: {
-    color: BrandColors.white,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  cameraSubtitle: {
-    color: BrandColors.darkTextSecondary,
-    textAlign: 'center',
-    marginTop: 4,
-    maxWidth: 280,
-  },
-  bottomControls: {
-    alignItems: 'center',
-    paddingBottom: 16,
-  },
-  durationRow: {
+  draftHeaderBtn: {
     flexDirection: 'row',
-    gap: 16,
-    marginBottom: 16,
-  },
-  durationTab: {
+    alignItems: 'center',
+    gap: 6,
     paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: 'rgba(37, 244, 238, 0.1)',
+    minHeight: 44,
   },
-  durationTabActive: {
-    backgroundColor: BrandColors.white,
-  },
-  durationText: {
-    color: BrandColors.darkTextSecondary,
-    fontSize: 12,
+  draftHeaderText: {
     fontWeight: '700',
   },
-  durationTextActive: {
-    color: BrandColors.black,
+  nextBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    minHeight: 44,
   },
-  shutterRow: {
+  nextBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  previewContainer: {
+    flex: 1,
+    position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#000000',
   },
-  shutterOuter: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    borderWidth: 4,
-    borderColor: BrandColors.white,
+  captionOverlay: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
     alignItems: 'center',
-    justifyContent: 'center',
+    zIndex: 5,
+  },
+  captionTop: {
+    top: 24,
+  },
+  captionCenter: {
+    top: '45%',
+  },
+  captionBottom: {
+    bottom: 40,
+  },
+  captionText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  captionNeon: {
+    color: BrandColors.cyan,
+    textShadowColor: BrandColors.cyan,
+    textShadowRadius: 8,
+  },
+  captionBold: {
+    fontWeight: '900',
+    fontSize: 18,
+  },
+  captionMinimal: {
     backgroundColor: 'transparent',
-  },
-  shutterInner: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: BrandColors.pink,
+    opacity: 0.9,
+    fontSize: 14,
   },
 });
