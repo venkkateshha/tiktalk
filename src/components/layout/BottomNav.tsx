@@ -2,10 +2,11 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { useTheme } from '../../theme';
 import { BrandColors } from '../../theme/colors';
-import { NavigationTab } from '../../types';
+import { NavigationTab } from '../../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
+import { A11yStandards } from '../../core/a11y/a11yStandards';
 
-interface BottomNavProps {
+export interface BottomNavProps {
   activeTab: NavigationTab;
   onTabChange: (tab: NavigationTab) => void;
 }
@@ -22,12 +23,19 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange }) 
           borderTopColor: theme.navBorder,
         },
       ]}
+      accessible={true}
+      accessibilityRole="tablist"
+      accessibilityLabel="Bottom navigation bar"
     >
       {/* 1. Home */}
       <TouchableOpacity
-        style={styles.tab}
+        style={[styles.tab, A11yStandards.minTouchTarget]}
         onPress={() => onTabChange('Home')}
         activeOpacity={0.7}
+        accessible={true}
+        accessibilityRole="tab"
+        accessibilityLabel="Home, tab 1 of 5"
+        accessibilityState={{ selected: activeTab === 'Home' }}
       >
         <Ionicons
           name={activeTab === 'Home' ? 'home' : 'home-outline'}
@@ -50,9 +58,13 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange }) 
 
       {/* 2. Discover */}
       <TouchableOpacity
-        style={styles.tab}
+        style={[styles.tab, A11yStandards.minTouchTarget]}
         onPress={() => onTabChange('Discover')}
         activeOpacity={0.7}
+        accessible={true}
+        accessibilityRole="tab"
+        accessibilityLabel="Discover, tab 2 of 5"
+        accessibilityState={{ selected: activeTab === 'Discover' }}
       >
         <Ionicons
           name={activeTab === 'Discover' ? 'compass' : 'compass-outline'}
@@ -75,9 +87,12 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange }) 
 
       {/* 3. Create ("+" Center Button) */}
       <TouchableOpacity
-        style={styles.createButtonContainer}
+        style={[styles.createButtonContainer, A11yStandards.minTouchTarget]}
         onPress={() => onTabChange('Create')}
         activeOpacity={0.8}
+        accessible={true}
+        accessibilityRole="button"
+        accessibilityLabel="Create video, tab 3 of 5"
       >
         <View style={styles.createButtonBorderCyan} />
         <View style={styles.createButtonBorderPink} />
@@ -88,9 +103,13 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange }) 
 
       {/* 4. Inbox */}
       <TouchableOpacity
-        style={styles.tab}
+        style={[styles.tab, A11yStandards.minTouchTarget]}
         onPress={() => onTabChange('Inbox')}
         activeOpacity={0.7}
+        accessible={true}
+        accessibilityRole="tab"
+        accessibilityLabel="Inbox, tab 4 of 5"
+        accessibilityState={{ selected: activeTab === 'Inbox' }}
       >
         <Ionicons
           name={activeTab === 'Inbox' ? 'chatbubble-ellipses' : 'chatbubble-ellipses-outline'}
@@ -113,9 +132,13 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange }) 
 
       {/* 5. Profile */}
       <TouchableOpacity
-        style={styles.tab}
+        style={[styles.tab, A11yStandards.minTouchTarget]}
         onPress={() => onTabChange('Profile')}
         activeOpacity={0.7}
+        accessible={true}
+        accessibilityRole="tab"
+        accessibilityLabel="Profile, tab 5 of 5"
+        accessibilityState={{ selected: activeTab === 'Profile' }}
       >
         <Ionicons
           name={activeTab === 'Profile' ? 'person' : 'person-outline'}
@@ -159,8 +182,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
   },
   createButtonContainer: {
-    width: 46,
-    height: 32,
+    width: 48,
+    height: 36,
     position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
@@ -168,7 +191,7 @@ const styles = StyleSheet.create({
   },
   createButtonBorderCyan: {
     position: 'absolute',
-    left: 0,
+    left: 2,
     width: 40,
     height: 30,
     backgroundColor: BrandColors.cyan,
@@ -176,7 +199,7 @@ const styles = StyleSheet.create({
   },
   createButtonBorderPink: {
     position: 'absolute',
-    right: 0,
+    right: 2,
     width: 40,
     height: 30,
     backgroundColor: BrandColors.pink,

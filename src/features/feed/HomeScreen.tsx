@@ -1,25 +1,54 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useTheme } from '../../theme';
 import { BrandColors } from '../../theme/colors';
-import { FeedType } from '../../types';
+import { FeedType } from '../../domain/post';
 import { Header } from '../../components/ui/Header';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Badge } from '../../components/ui/Badge';
+import { StoriesRail, StorySummary } from '../../components/ui/StoriesRail';
+import { useNavigation } from '../../navigation';
 import { Ionicons } from '@expo/vector-icons';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export const HomeScreen: React.FC = () => {
   const { theme, typography } = useTheme();
+  const { openStories } = useNavigation();
   const [activeFeed, setActiveFeed] = useState<FeedType>('forYou');
   const [isLiked, setIsLiked] = useState<boolean>(false);
   const [isBookmarked, setIsBookmarked] = useState<boolean>(false);
 
+  // Sample stories available in foundation (without fake business data)
+  const storiesList: StorySummary[] = [
+    { userId: 'tiktalk', username: 'TikTalk', hasUnseenStories: true },
+    { userId: 'creator_hub', username: 'CreatorHub', hasUnseenStories: true },
+    { userId: 'music_lab', username: 'MusicLab', hasUnseenStories: false },
+  ];
+
+  const handleSelectStory = (story: StorySummary) => {
+    openStories({
+      userId: story.userId,
+      entryPoint: 'home_rail',
+    });
+  };
+
+  const handleAddStory = () => {
+    openStories({
+      userId: 'current_user',
+      entryPoint: 'home_rail',
+    });
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Top Header with Following / For You & Theme Switcher */}
-      <Header activeFeed={activeFeed} onFeedChange={setActiveFeed} />
+      <Header activeFeed={activeFeed as any} onFeedChange={(feed) => setActiveFeed(feed as FeedType)} />
+
+      {/* Stories Rail: Accessible from Home Feed (NOT a bottom tab) */}
+      <StoriesRail
+        stories={storiesList}
+        onSelectStory={handleSelectStory}
+        onAddStory={handleAddStory}
+      />
 
       {/* Main Video Viewport Area */}
       <View style={[styles.viewport, { backgroundColor: BrandColors.black }]}>
@@ -27,7 +56,7 @@ export const HomeScreen: React.FC = () => {
         <View style={styles.centerCanvas}>
           <EmptyState
             title={activeFeed === 'forYou' ? 'For You Feed Initialized' : 'Following Feed Ready'}
-            badgeText="Phase 0 — Foundation"
+            badgeText="Phase 1 — Architecture"
             description={
               activeFeed === 'forYou'
                 ? 'The TikTalk High-Performance 60 FPS video player is connected to the Cloudflare R2 streaming edge. No videos have been published yet.'
@@ -39,7 +68,7 @@ export const HomeScreen: React.FC = () => {
           {/* Quick Engine Status Card */}
           <View style={[styles.engineCard, { backgroundColor: 'rgba(26, 26, 26, 0.85)', borderColor: BrandColors.darkBorder }]}>
             <View style={styles.engineHeader}>
-              <Badge label="New Architecture (Fabric)" variant="primary" />
+              <Badge label="Phase 1 Architecture" variant="primary" />
               <Badge label="60% RevShare" variant="accent" />
             </View>
             <Text style={[styles.engineText, { color: BrandColors.white, fontSize: typography.fontSize.xs }]}>
@@ -51,7 +80,14 @@ export const HomeScreen: React.FC = () => {
         {/* Right Side Action Dock (MNC Standard) */}
         <View style={styles.actionDock}>
           {/* Creator Avatar with Follow '+' badge */}
-          <TouchableOpacity style={styles.avatarButton} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={styles.avatarButton}
+            activeOpacity={0.8}
+            onPress={() => openStories({ userId: 'tiktalk', entryPoint: 'home_rail' })}
+            accessible={true}
+            accessibilityRole="button"
+            accessibilityLabel="View creator story"
+          >
             <View style={styles.avatarCircle}>
               <Ionicons name="person" size={20} color={BrandColors.black} />
             </View>
@@ -65,6 +101,9 @@ export const HomeScreen: React.FC = () => {
             style={styles.actionItem}
             onPress={() => setIsLiked(!isLiked)}
             activeOpacity={0.7}
+            accessible={true}
+            accessibilityRole="button"
+            accessibilityLabel={isLiked ? 'Unlike video' : 'Like video'}
           >
             <Ionicons
               name={isLiked ? 'heart' : 'heart-outline'}
@@ -77,7 +116,13 @@ export const HomeScreen: React.FC = () => {
           </TouchableOpacity>
 
           {/* Comment Button */}
-          <TouchableOpacity style={styles.actionItem} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.actionItem}
+            activeOpacity={0.7}
+            accessible={true}
+            accessibilityRole="button"
+            accessibilityLabel="Comments"
+          >
             <Ionicons name="chatbubble-ellipses-outline" size={32} color={BrandColors.white} />
             <Text style={[styles.actionCount, { color: BrandColors.white }]}>0</Text>
           </TouchableOpacity>
@@ -87,6 +132,9 @@ export const HomeScreen: React.FC = () => {
             style={styles.actionItem}
             onPress={() => setIsBookmarked(!isBookmarked)}
             activeOpacity={0.7}
+            accessible={true}
+            accessibilityRole="button"
+            accessibilityLabel={isBookmarked ? 'Remove bookmark' : 'Bookmark video'}
           >
             <Ionicons
               name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
@@ -96,8 +144,14 @@ export const HomeScreen: React.FC = () => {
             <Text style={[styles.actionCount, { color: BrandColors.white }]}>Save</Text>
           </TouchableOpacity>
 
-          {/* Share Button (Trojan Horse Growth Hook) */}
-          <TouchableOpacity style={styles.actionItem} activeOpacity={0.7}>
+          {/* Share Button */}
+          <TouchableOpacity
+            style={styles.actionItem}
+            activeOpacity={0.7}
+            accessible={true}
+            accessibilityRole="button"
+            accessibilityLabel="Share video"
+          >
             <Ionicons name="share-social-outline" size={32} color={BrandColors.white} />
             <Text style={[styles.actionCount, { color: BrandColors.white }]}>Share</Text>
           </TouchableOpacity>
@@ -118,7 +172,7 @@ export const HomeScreen: React.FC = () => {
             @tiktalk <Text style={{ color: BrandColors.cyan }}>✓</Text>
           </Text>
           <Text style={[styles.videoCaption, { color: BrandColors.white, fontSize: typography.fontSize.sm }]} numberOfLines={2}>
-            Welcome to TikTalk. World-class short video platform with 60% creator share & weekly UPI payouts. #tiktalk #creator
+            Welcome to TikTalk. World-class social platform with 60% creator share & weekly payouts. #tiktalk #creator
           </Text>
 
           {/* Audio Marquee Ticker */}

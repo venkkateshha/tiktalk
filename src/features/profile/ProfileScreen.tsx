@@ -6,11 +6,21 @@ import { Header } from '../../components/ui/Header';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { Avatar } from '../../components/ui/Avatar';
+import { useNavigation } from '../../navigation';
 import { Ionicons } from '@expo/vector-icons';
 
 export const ProfileScreen: React.FC = () => {
   const { theme, typography } = useTheme();
+  const { openStories } = useNavigation();
   const [activeTab, setActiveTab] = useState<'videos' | 'liked' | 'saved'>('videos');
+
+  const handleOpenProfileStory = () => {
+    openStories({
+      userId: 'tiktalk.official',
+      entryPoint: 'profile_avatar',
+    });
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -20,12 +30,14 @@ export const ProfileScreen: React.FC = () => {
         {/* Profile Header */}
         <View style={styles.profileHeader}>
           <View style={styles.avatarWrapper}>
-            <View style={[styles.avatar, { backgroundColor: theme.surface, borderColor: BrandColors.cyan }]}>
-              <Ionicons name="person" size={40} color={theme.text} />
-            </View>
-            <View style={styles.verifiedBadge}>
-              <Ionicons name="checkmark-sharp" size={10} color={BrandColors.white} />
-            </View>
+            <Avatar
+              name="TikTalk Creator"
+              size="xl"
+              hasStory={true}
+              isStoryViewed={false}
+              isVerified={true}
+              onPress={handleOpenProfileStory}
+            />
           </View>
 
           <Text style={[styles.displayName, { color: theme.text, fontSize: typography.fontSize.lg }]}>
@@ -56,9 +68,23 @@ export const ProfileScreen: React.FC = () => {
 
         {/* Action Buttons */}
         <View style={styles.actionRow}>
-          <Button label="Edit Profile" variant="outline" size="sm" style={{ flex: 1 }} onPress={() => {}} />
+          <Button
+            label="Edit Profile"
+            variant="outline"
+            size="sm"
+            style={{ flex: 1 }}
+            onPress={() => {}}
+            accessibilityLabel="Edit profile details"
+          />
           <View style={{ width: 8 }} />
-          <Button label="Share Profile" variant="outline" size="sm" style={{ flex: 1 }} onPress={() => {}} />
+          <Button
+            label="Share Profile"
+            variant="outline"
+            size="sm"
+            style={{ flex: 1 }}
+            onPress={() => {}}
+            accessibilityLabel="Share your creator profile"
+          />
         </View>
 
         {/* 60% Creator Economy & Weekly Monday UPI Payout Card */}
@@ -105,18 +131,27 @@ export const ProfileScreen: React.FC = () => {
           <TouchableOpacity
             style={[styles.profileTab, activeTab === 'videos' && { borderBottomColor: BrandColors.cyan, borderBottomWidth: 2 }]}
             onPress={() => setActiveTab('videos')}
+            accessible={true}
+            accessibilityRole="tab"
+            accessibilityLabel="Videos tab"
           >
             <Ionicons name="grid-outline" size={20} color={activeTab === 'videos' ? theme.text : theme.textSecondary} />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.profileTab, activeTab === 'liked' && { borderBottomColor: BrandColors.pink, borderBottomWidth: 2 }]}
             onPress={() => setActiveTab('liked')}
+            accessible={true}
+            accessibilityRole="tab"
+            accessibilityLabel="Liked videos tab"
           >
             <Ionicons name="heart-outline" size={20} color={activeTab === 'liked' ? theme.text : theme.textSecondary} />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.profileTab, activeTab === 'saved' && { borderBottomColor: BrandColors.cyan, borderBottomWidth: 2 }]}
             onPress={() => setActiveTab('saved')}
+            accessible={true}
+            accessibilityRole="tab"
+            accessibilityLabel="Saved bookmarks tab"
           >
             <Ionicons name="bookmark-outline" size={20} color={activeTab === 'saved' ? theme.text : theme.textSecondary} />
           </TouchableOpacity>
@@ -146,29 +181,7 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
   },
   avatarWrapper: {
-    position: 'relative',
     marginBottom: 10,
-  },
-  avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 2.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  verifiedBadge: {
-    position: 'absolute',
-    bottom: 2,
-    right: 2,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: BrandColors.cyan,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: BrandColors.black,
   },
   displayName: {
     fontWeight: '800',

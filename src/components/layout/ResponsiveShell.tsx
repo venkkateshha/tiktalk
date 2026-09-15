@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { View, StyleSheet, useWindowDimensions, SafeAreaView, Platform } from 'react-native';
 import { useTheme } from '../../theme';
-import { NavigationTab } from '../../types';
+import { useNavigation } from '../../navigation';
 import { BottomNav } from './BottomNav';
 import { WebSidebar } from './WebSidebar';
 import { WebContextualBar } from './WebContextualBar';
@@ -10,11 +10,12 @@ import { DiscoverScreen } from '../../features/discover/DiscoverScreen';
 import { CreateScreen } from '../../features/create/CreateScreen';
 import { InboxScreen } from '../../features/inbox/InboxScreen';
 import { ProfileScreen } from '../../features/profile/ProfileScreen';
+import { StoriesViewer } from '../../features/stories/StoriesViewer';
 
 export const ResponsiveShell: React.FC = () => {
   const { width } = useWindowDimensions();
   const { theme } = useTheme();
-  const [activeTab, setActiveTab] = useState<NavigationTab>('Home');
+  const { activeTab, setActiveTab, activeStory } = useNavigation();
 
   // Responsive Breakpoints:
   // - Mobile: width < 768
@@ -39,33 +40,42 @@ export const ResponsiveShell: React.FC = () => {
     }
   };
 
-  if (isMobile) {
-    return (
-      <SafeAreaView style={[styles.mobileContainer, { backgroundColor: theme.background }]}>
-        <View style={styles.mobileScreenContent}>{renderActiveScreen()}</View>
-        <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
-      </SafeAreaView>
-    );
-  }
-
-  // Web & Desktop Responsive Layout (Sidebar + Center Content + Contextual Area)
   return (
-    <View style={[styles.desktopContainer, { backgroundColor: theme.background }]}>
-      {/* Left Navigation Sidebar */}
-      <WebSidebar activeTab={activeTab} onTabChange={setActiveTab} />
+    <View style={[styles.rootContainer, { backgroundColor: theme.background }]}>
+      {/* Stories Full-Screen Modal Viewer (Accessible from Home & Profile, NOT bottom tab) */}
+      {activeStory && <StoriesViewer params={activeStory} />}
 
-      {/* Center Main Content Area */}
-      <View style={[styles.desktopMainContent, { borderColor: theme.border }]}>
-        {renderActiveScreen()}
-      </View>
+      {isMobile ? (
+        <SafeAreaView style={[styles.mobileContainer, { backgroundColor: theme.background }]}>
+          <View style={styles.mobileScreenContent}>{renderActiveScreen()}</View>
+          <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+        </SafeAreaView>
+      ) : (
+        /* Web & Desktop Responsive Layout (Sidebar + Center Content + Contextual Area) */
+        <View style={[styles.desktopContainer, { backgroundColor: theme.background }]}>
+          {/* Left Navigation Sidebar */}
+          <WebSidebar activeTab={activeTab} onTabChange={setActiveTab} />
 
-      {/* Right Contextual Area on Desktop */}
-      {isDesktop && <WebContextualBar />}
+          {/* Center Main Content Area */}
+          <View style={[styles.desktopMainContent, { borderColor: theme.border }]}>
+            {renderActiveScreen()}
+          </View>
+
+          {/* Right Contextual Area on Desktop */}
+          {isDesktop && <WebContextualBar />}
+        </View>
+      )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
+  rootContainer: {
+    flex: 1,
+    width: '100%',
+    height: Platform.OS === 'web' ? ('100vh' as any) : '100%',
+    overflow: 'hidden',
+  },
   mobileContainer: {
     flex: 1,
   },
@@ -75,7 +85,7 @@ const styles = StyleSheet.create({
   desktopContainer: {
     flex: 1,
     flexDirection: 'row',
-    height: Platform.OS === 'web' ? ('100vh' as any) : '100%',
+    height: '100%',
     width: '100%',
     overflow: 'hidden',
   },

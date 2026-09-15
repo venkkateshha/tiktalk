@@ -1,54 +1,79 @@
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, ViewStyle, TextStyle } from 'react-native';
+import {
+  TouchableOpacity,
+  Text,
+  StyleSheet,
+  ActivityIndicator,
+  ViewStyle,
+  TextStyle,
+  Platform,
+} from 'react-native';
 import { useTheme } from '../../theme';
 import { BrandColors } from '../../theme/colors';
+import { A11yStandards } from '../../core/a11y/a11yStandards';
 
-interface ButtonProps {
-  label: string;
+export interface ButtonProps {
+  label?: string;
+  title?: string;
+  children?: React.ReactNode;
   onPress: () => void;
-  variant?: 'primary' | 'accent' | 'outline' | 'ghost';
+  variant?: 'primary' | 'accent' | 'secondary' | 'outline' | 'ghost';
   size?: 'sm' | 'md' | 'lg';
   loading?: boolean;
   disabled?: boolean;
+  fullWidth?: boolean;
   style?: ViewStyle;
   textStyle?: TextStyle;
   icon?: React.ReactNode;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
 }
 
 export const Button: React.FC<ButtonProps> = ({
   label,
+  title,
+  children,
   onPress,
   variant = 'primary',
   size = 'md',
   loading = false,
   disabled = false,
+  fullWidth = false,
   style,
   textStyle,
   icon,
+  accessibilityLabel,
+  accessibilityHint,
 }) => {
-  const { theme, typography } = useTheme();
+  const { theme, typography, spacing, borderRadius } = useTheme();
+  const textContent = label || title || (typeof children === 'string' ? children : '');
 
   const getContainerStyle = (): ViewStyle => {
     const base: ViewStyle = {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      borderRadius: 8,
+      borderRadius: borderRadius.sm,
+      minHeight: A11yStandards.minTouchTarget.minHeight, // 44px min touch target
+      minWidth: A11yStandards.minTouchTarget.minWidth,
+      alignSelf: fullWidth ? 'stretch' : 'auto',
     };
 
     switch (size) {
       case 'sm':
-        base.paddingVertical = 6;
-        base.paddingHorizontal = 12;
+        base.paddingVertical = spacing.xs;
+        base.paddingHorizontal = spacing.md;
+        base.minHeight = 36;
         break;
       case 'lg':
-        base.paddingVertical = 14;
-        base.paddingHorizontal = 24;
+        base.paddingVertical = spacing.base;
+        base.paddingHorizontal = spacing.xl;
+        base.minHeight = 52;
         break;
       case 'md':
       default:
-        base.paddingVertical = 10;
-        base.paddingHorizontal = 18;
+        base.paddingVertical = spacing.sm;
+        base.paddingHorizontal = spacing.lg;
         break;
     }
 
@@ -58,6 +83,11 @@ export const Button: React.FC<ButtonProps> = ({
         break;
       case 'accent':
         base.backgroundColor = BrandColors.pink;
+        break;
+      case 'secondary':
+        base.backgroundColor = theme.surface;
+        base.borderWidth = 1;
+        base.borderColor = theme.border;
         break;
       case 'outline':
         base.backgroundColor = 'transparent';
@@ -70,7 +100,7 @@ export const Button: React.FC<ButtonProps> = ({
     }
 
     if (disabled) {
-      base.opacity = 0.5;
+      base.opacity = 0.45;
     }
 
     return base;
@@ -85,6 +115,7 @@ export const Button: React.FC<ButtonProps> = ({
       case 'accent':
         color = BrandColors.white;
         break;
+      case 'secondary':
       case 'outline':
       case 'ghost':
       default:
@@ -105,6 +136,11 @@ export const Button: React.FC<ButtonProps> = ({
       onPress={onPress}
       disabled={disabled || loading}
       activeOpacity={0.8}
+      accessible={true}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel || textContent || 'Button'}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={{ disabled: disabled || loading, busy: loading }}
     >
       {loading ? (
         <ActivityIndicator
@@ -114,9 +150,19 @@ export const Button: React.FC<ButtonProps> = ({
       ) : (
         <>
           {icon ? <>{icon}</> : null}
-          <Text style={[getLabelStyle(), icon ? { marginLeft: 8 } : null, textStyle]}>
-            {label}
-          </Text>
+          {textContent ? (
+            <Text
+              style={[
+                getLabelStyle(),
+                icon ? { marginLeft: spacing.xs } : null,
+                textStyle,
+              ]}
+            >
+              {textContent}
+            </Text>
+          ) : (
+            children
+          )}
         </>
       )}
     </TouchableOpacity>
