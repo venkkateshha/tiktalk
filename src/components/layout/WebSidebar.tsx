@@ -4,6 +4,8 @@ import { useTheme } from '../../theme';
 import { BrandColors } from '../../theme/colors';
 import { NavigationTab } from '../../types';
 import { Ionicons } from '@expo/vector-icons';
+import { A11yStandards } from '../../core/a11y/a11yStandards';
+import { useUnreadBadge } from '../../features/inbox/hooks/useUnreadBadge';
 
 interface WebSidebarProps {
   activeTab: NavigationTab;
@@ -12,6 +14,7 @@ interface WebSidebarProps {
 
 export const WebSidebar: React.FC<WebSidebarProps> = ({ activeTab, onTabChange }) => {
   const { theme, typography } = useTheme();
+  const { hasUnread, badgeText } = useUnreadBadge();
 
   const navItems: { tab: NavigationTab; label: string; icon: keyof typeof Ionicons.glyphMap; iconActive: keyof typeof Ionicons.glyphMap }[] = [
     { tab: 'Home', label: 'For You', icon: 'home-outline', iconActive: 'home' },
@@ -37,11 +40,13 @@ export const WebSidebar: React.FC<WebSidebarProps> = ({ activeTab, onTabChange }
       <View style={styles.navList}>
         {navItems.map((item) => {
           const isActive = activeTab === item.tab;
+          const isInbox = item.tab === 'Inbox';
           return (
             <TouchableOpacity
               key={item.tab}
               style={[
                 styles.navItem,
+                A11yStandards.minTouchTarget,
                 isActive && {
                   backgroundColor: theme.card,
                   borderLeftWidth: 3,
@@ -50,6 +55,10 @@ export const WebSidebar: React.FC<WebSidebarProps> = ({ activeTab, onTabChange }
               ]}
               onPress={() => onTabChange(item.tab)}
               activeOpacity={0.8}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityState={{ selected: isActive }}
+              accessibilityLabel={`${item.label}${isInbox && hasUnread ? `, ${badgeText} unread` : ''}`}
             >
               <Ionicons
                 name={isActive ? item.iconActive : item.icon}
@@ -68,6 +77,11 @@ export const WebSidebar: React.FC<WebSidebarProps> = ({ activeTab, onTabChange }
               >
                 {item.label}
               </Text>
+              {isInbox && hasUnread && (
+                <View style={styles.sidebarBadge}>
+                  <Text style={styles.sidebarBadgeText}>{badgeText}</Text>
+                </View>
+              )}
             </TouchableOpacity>
           );
         })}
@@ -157,5 +171,20 @@ const styles = StyleSheet.create({
   creatorCardDesc: {
     fontSize: 11,
     lineHeight: 15,
+  },
+  sidebarBadge: {
+    backgroundColor: BrandColors.pink,
+    marginLeft: 'auto',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+    minWidth: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sidebarBadgeText: {
+    color: BrandColors.white,
+    fontSize: 10,
+    fontWeight: '800',
   },
 });

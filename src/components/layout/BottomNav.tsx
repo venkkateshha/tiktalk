@@ -5,6 +5,7 @@ import { BrandColors } from '../../theme/colors';
 import { NavigationTab } from '../../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
 import { A11yStandards } from '../../core/a11y/a11yStandards';
+import { useUnreadBadge } from '../../features/inbox/hooks/useUnreadBadge';
 
 export interface BottomNavProps {
   activeTab: NavigationTab;
@@ -13,6 +14,7 @@ export interface BottomNavProps {
 
 export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange }) => {
   const { theme, typography } = useTheme();
+  const { hasUnread, badgeText } = useUnreadBadge();
 
   return (
     <View
@@ -108,14 +110,26 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange }) 
         activeOpacity={0.7}
         accessible={true}
         accessibilityRole="tab"
-        accessibilityLabel="Inbox, tab 4 of 5"
+        accessibilityLabel={`Inbox${hasUnread ? `, ${badgeText} unread notifications` : ''}, tab 4 of 5`}
         accessibilityState={{ selected: activeTab === 'Inbox' }}
       >
-        <Ionicons
-          name={activeTab === 'Inbox' ? 'chatbubble-ellipses' : 'chatbubble-ellipses-outline'}
-          size={22}
-          color={activeTab === 'Inbox' ? theme.text : theme.textSecondary}
-        />
+        <View style={styles.iconWithBadge}>
+          <Ionicons
+            name={activeTab === 'Inbox' ? 'chatbubble-ellipses' : 'chatbubble-ellipses-outline'}
+            size={22}
+            color={activeTab === 'Inbox' ? theme.text : theme.textSecondary}
+          />
+          {hasUnread && (
+            <View
+              style={[
+                styles.tabBadge,
+                { backgroundColor: BrandColors.pink },
+              ]}
+            >
+              <Text style={styles.tabBadgeText}>{badgeText}</Text>
+            </View>
+          )}
+        </View>
         <Text
           style={[
             styles.tabLabel,
@@ -212,5 +226,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 2,
+  },
+  iconWithBadge: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -8,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  tabBadgeText: {
+    color: BrandColors.white,
+    fontSize: 9,
+    fontWeight: '800',
   },
 });
