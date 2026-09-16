@@ -25,6 +25,7 @@ import { A11yStandards } from '../../../core/a11y/a11yStandards';
 import { useChatThread } from '../hooks/useChatThread';
 import { MessageBubble } from './MessageBubble';
 import { MessageInput } from './MessageInput';
+import { useCallContext } from '../../../features/calls/context/CallContext';
 
 export interface ChatThreadViewProps {
   conversationId: string;
@@ -66,6 +67,20 @@ export const ChatThreadView: React.FC<ChatThreadViewProps> = ({
     : conversation?.title || 'Group Conversation';
 
   const isBlocked = conversation?.isBlocked || false;
+
+  // Phase 10: Call initiation from chat
+  const { startCall, activeCall } = useCallContext();
+  const isCallActive = !!activeCall;
+
+  const handleVoiceCall = () => {
+    if (!otherParticipant || isCallActive) return;
+    startCall(conversationId, 'audio', otherParticipant.userId).catch(() => {});
+  };
+
+  const handleVideoCall = () => {
+    if (!otherParticipant || isCallActive) return;
+    startCall(conversationId, 'video', otherParticipant.userId).catch(() => {});
+  };
 
   // Auto-scroll to bottom when messages update
   useEffect(() => {
@@ -145,6 +160,33 @@ export const ChatThreadView: React.FC<ChatThreadViewProps> = ({
             </View>
           </TouchableOpacity>
         </View>
+
+        {/* Phase 10: Voice & Video call buttons — 1:1 direct conversations only */}
+        {isDirect && otherParticipant && (
+          <>
+            <TouchableOpacity
+              style={[styles.callBtn, A11yStandards.minTouchTarget, isCallActive && styles.callBtnDisabled]}
+              onPress={handleVoiceCall}
+              disabled={isCallActive}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel={isCallActive ? 'Call in progress' : `Voice call ${title}`}
+            >
+              <Ionicons name="call-outline" size={20} color={isCallActive ? theme.textSecondary : BrandColors.cyan} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.callBtn, A11yStandards.minTouchTarget, isCallActive && styles.callBtnDisabled]}
+              onPress={handleVideoCall}
+              disabled={isCallActive}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel={isCallActive ? 'Call in progress' : `Video call ${title}`}
+            >
+              <Ionicons name="videocam-outline" size={20} color={isCallActive ? theme.textSecondary : BrandColors.cyan} />
+            </TouchableOpacity>
+          </>
+        )}
 
         <TouchableOpacity
           style={[styles.menuBtn, A11yStandards.minTouchTarget]}
@@ -405,5 +447,15 @@ const styles = StyleSheet.create({
   },
   menuItemText: {
     fontWeight: '600',
+  },
+  callBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  callBtnDisabled: {
+    opacity: 0.4,
   },
 });

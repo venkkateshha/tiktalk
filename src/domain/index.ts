@@ -7,3 +7,4 @@ export * from './auth';
 export * from './navigation';
 export * from './story';
 export * from './chat';
+export * from './call';
