@@ -7,3 +7,5 @@ export * from './security';
 export * from './config';
 export * from './a11y';
 export * from './errors';
+export * from './supabase';
+export * from './auth';

@@ -9,6 +9,8 @@ export interface AppConfig {
   apiBaseUrl: string;
   wsBaseUrl: string;
   cdnBaseUrl: string;
+  supabaseUrl?: string;
+  supabaseAnonKey?: string;
   environment: 'development' | 'staging' | 'production';
   isProduction: boolean;
   isDevelopment: boolean;
@@ -24,9 +26,14 @@ export interface AppConfig {
 export const Config: AppConfig = {
   appName: 'TikTalk',
   appVersion: '1.0.0',
-  apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL || 'https://api.tiktalk.internal',
+  apiBaseUrl:
+    process.env.EXPO_PUBLIC_API_URL ||
+    process.env.EXPO_PUBLIC_API_BASE_URL ||
+    'https://api.tiktalk.internal',
   wsBaseUrl: process.env.EXPO_PUBLIC_WS_BASE_URL || 'wss://realtime.tiktalk.internal',
   cdnBaseUrl: process.env.EXPO_PUBLIC_CDN_BASE_URL || 'https://cdn.tiktalk.internal',
+  supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL || undefined,
+  supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || undefined,
   environment: (process.env.NODE_ENV as any) === 'production' ? 'production' : 'development',
   isProduction: (process.env.NODE_ENV as any) === 'production',
   isDevelopment: (process.env.NODE_ENV as any) !== 'production',

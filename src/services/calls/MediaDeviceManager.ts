@@ -175,18 +175,41 @@ export class MediaDeviceManager implements IMediaProvider {
     };
   }
 
+  private remoteStreams: Map<string, any> = new Map();
+
+  getLocalStream(): any {
+    return this.localStream;
+  }
+
+  setLocalStream(stream: any): void {
+    this.localStream = stream;
+  }
+
+  getRemoteStream(userId?: string): any {
+    if (userId) return this.remoteStreams.get(userId) || null;
+    return this.remoteStreams.values().next().value || null;
+  }
+
+  setRemoteStream(userId: string, stream: any): void {
+    this.remoteStreams.set(userId, stream);
+  }
+
   attachLocalStream(element: any): void {
     if (element && this.localStream && 'srcObject' in element) {
       element.srcObject = this.localStream;
     }
   }
 
-  attachRemoteStream(_userId: string, _element: any): void {
-    // Remote media stream attachment boundary
+  attachRemoteStream(userId: string, element: any): void {
+    const stream = this.remoteStreams.get(userId) || this.remoteStreams.values().next().value;
+    if (element && stream && 'srcObject' in element) {
+      element.srcObject = stream;
+    }
   }
 
   reset(): void {
     this.releaseLocalMedia();
+    this.remoteStreams.clear();
     this.deviceState = {
       audioMuted: false,
       videoOff: false,

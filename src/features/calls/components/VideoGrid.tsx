@@ -2,16 +2,18 @@
  * TikTalk Component: VideoGrid
  * Renders video tiles for 1:1 and group calls.
  * Displays speaking indicators (Cyan glow #25F4EE), mute status,
- * local video thumbnail PiP, and participant avatars.
+ * local video thumbnail PiP, participant avatars, and real browser MediaStreams.
  */
 
-import React from 'react';
-import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import React, { useRef, useEffect } from 'react';
+import { View, Text, StyleSheet, Dimensions, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CallParticipant, MediaDeviceState } from '../../../domain/call';
 import { BrandColors } from '../../../theme/colors';
 import { Avatar } from '../../../components/ui/Avatar';
 import { AudioWaveformVisualizer } from './AudioWaveformVisualizer';
+import { mediaDeviceManager } from '../../../services/calls/MediaDeviceManager';
+import { callService } from '../../../services/calls/CallService';
 
 export interface VideoGridProps {
   participants: CallParticipant[];
@@ -19,40 +21,145 @@ export interface VideoGridProps {
   isAudioOnly?: boolean;
 }
 
+let NativeRTCView: any = null;
+if (Platform.OS === 'android') {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const webrtc = require('react-native-webrtc');
+    NativeRTCView = webrtc.RTCView;
+  } catch (err) {
+    // Fallback if not loaded
+  }
+}
+
+const MediaStreamView: React.FC<{
+  stream: any;
+  isMuted?: boolean;
+  isMirrored?: boolean;
+  style?: any;
+}> = ({ stream, isMuted = false, isMirrored = false, style }) => {
+  const videoRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (Platform.OS === 'web' && videoRef.current && stream) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.play?.().catch(() => {});
+    }
+  }, [stream]);
+
+  if (!stream) return null;
+
+  if (Platform.OS === 'web') {
+    return React.createElement('video', {
+      ref: videoRef,
+      autoPlay: true,
+      playsInline: true,
+      muted: isMuted,
+      style: {
+        width: '100%',
+        height: '100%',
+        objectFit: 'cover',
+        transform: isMirrored ? 'scaleX(-1)' : 'none',
+        ...style,
+      },
+    });
+  }
+
+  if (Platform.OS === 'android' && NativeRTCView) {
+    const streamURL =
+      typeof stream.toURL === 'function'
+        ? stream.toURL()
+        : typeof stream === 'string'
+        ? stream
+        : stream.url || '';
+
+    return (
+      <NativeRTCView
+        streamURL={streamURL}
+        style={[{ width: '100%', height: '100%' }, style]}
+        objectFit="cover"
+        mirror={isMirrored}
+        zOrder={0}
+      />
+    );
+  }
+
+  return null;
+};
+
+const WebAudioPlayer: React.FC<{ stream: any }> = ({ stream }) => {
+  const audioRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (audioRef.current && stream) {
+      audioRef.current.srcObject = stream;
+      audioRef.current.play?.().catch(() => {});
+    }
+  }, [stream]);
+
+  if (Platform.OS !== 'web' || !stream) return null;
+
+  return React.createElement('audio', {
+    ref: audioRef,
+    autoPlay: true,
+    playsInline: true,
+    style: { display: 'none' },
+  });
+};
+
 export const VideoGrid: React.FC<VideoGridProps> = ({
   participants,
   localDeviceState,
   isAudioOnly = false,
 }) => {
-  const remoteParticipants = participants.filter((p) => p.userId !== 'me');
+  const myId = callService.getCurrentUserId?.() || 'me';
+  const remoteParticipants = participants.filter((p) => p.userId !== myId && p.userId !== 'me');
   const isOneOnOne = remoteParticipants.length <= 1;
-  const mainParticipant = remoteParticipants[0] || participants[0];
+  const mainParticipant = remoteParticipants[0] || participants.find((p) => p.userId !== myId) || participants[0];
+
+  const localStream = mediaDeviceManager.getLocalStream();
+  const remoteStream = mediaDeviceManager.getRemoteStream(mainParticipant?.userId);
+  const hasRemoteVideo = remoteStream && !mainParticipant?.videoOff && !isAudioOnly;
 
   if (isOneOnOne) {
     return (
       <View style={styles.container}>
         {/* Main Remote View */}
         <View style={styles.mainTile}>
-          <View style={styles.avatarCentered}>
-            <Avatar
-              source={mainParticipant?.user?.avatarUrl}
-              name={mainParticipant?.user?.displayName || mainParticipant?.user?.username || 'User'}
-              size="xl"
-              isVerified={mainParticipant?.user?.verificationStatus === 'verified'}
-            />
-            <Text style={styles.participantName}>
-              {mainParticipant?.user?.displayName || mainParticipant?.user?.username || 'Participant'}
-            </Text>
-
-            {/* Speaking / Audio visualizer */}
-            <View style={styles.waveformWrap}>
-              <AudioWaveformVisualizer
-                isSpeaking={mainParticipant?.isSpeaking ?? true}
-                isMuted={mainParticipant?.audioMuted ?? false}
-                size="md"
-              />
+          {hasRemoteVideo ? (
+            <View style={StyleSheet.absoluteFill}>
+              <MediaStreamView stream={remoteStream} style={StyleSheet.absoluteFill} />
+              <View style={styles.remoteNameOverlay}>
+                <Text style={styles.remoteNameOverlayText}>
+                  {mainParticipant?.user?.displayName || mainParticipant?.user?.username || 'Participant'}
+                </Text>
+              </View>
             </View>
-          </View>
+          ) : (
+            <View style={styles.avatarCentered}>
+              <Avatar
+                source={mainParticipant?.user?.avatarUrl}
+                name={mainParticipant?.user?.displayName || mainParticipant?.user?.username || 'User'}
+                size="xl"
+                isVerified={mainParticipant?.user?.verificationStatus === 'verified'}
+              />
+              <Text style={styles.participantName}>
+                {mainParticipant?.user?.displayName || mainParticipant?.user?.username || 'Participant'}
+              </Text>
+
+              {/* Speaking / Audio visualizer */}
+              <View style={styles.waveformWrap}>
+                <AudioWaveformVisualizer
+                  isSpeaking={mainParticipant?.isSpeaking ?? true}
+                  isMuted={mainParticipant?.audioMuted ?? false}
+                  size="md"
+                />
+              </View>
+            </View>
+          )}
+
+          {/* Hidden audio playback for remote audio tracks */}
+          {remoteStream && <WebAudioPlayer stream={remoteStream} />}
 
           {/* Remote Status Badges */}
           {mainParticipant?.audioMuted && (
@@ -66,18 +173,19 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
         {/* Local Preview Tile (PiP in corner for Video Calls) */}
         {!isAudioOnly && (
           <View style={styles.localPipTile}>
-            {localDeviceState.videoOff ? (
+            {localDeviceState.videoOff || !localStream ? (
               <View style={styles.localCamOff}>
                 <Ionicons name="videocam-off" size={20} color={BrandColors.white} />
                 <Text style={styles.localPipLabel}>Camera Off</Text>
               </View>
             ) : (
-              <View style={styles.localVideoActive}>
-                <Avatar
-                  name="You"
-                  size="sm"
+              <View style={StyleSheet.absoluteFill}>
+                <MediaStreamView
+                  stream={localStream}
+                  isMuted={true}
+                  isMirrored={true}
+                  style={StyleSheet.absoluteFill}
                 />
-                <Text style={styles.localPipLabel}>You</Text>
               </View>
             )}
             {localDeviceState.audioMuted && (
@@ -98,6 +206,9 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
         const isMe = p.userId === 'me';
         const isMuted = isMe ? localDeviceState.audioMuted : p.audioMuted;
         const isSpeaking = p.isSpeaking;
+        const participantStream = isMe
+          ? localStream
+          : mediaDeviceManager.getRemoteStream(p.userId);
 
         return (
           <View
@@ -107,11 +218,20 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
               isSpeaking && styles.groupTileSpeaking,
             ]}
           >
-            <Avatar
-              source={p.user?.avatarUrl}
-              name={p.user?.displayName || p.user?.username || (isMe ? 'You' : 'User')}
-              size="md"
-            />
+            {participantStream && !p.videoOff && !isAudioOnly ? (
+              <MediaStreamView
+                stream={participantStream}
+                isMuted={isMe}
+                isMirrored={isMe}
+                style={StyleSheet.absoluteFill}
+              />
+            ) : (
+              <Avatar
+                source={p.user?.avatarUrl}
+                name={p.user?.displayName || p.user?.username || (isMe ? 'You' : 'User')}
+                size="md"
+              />
+            )}
             <Text style={styles.groupTileName} numberOfLines={1}>
               {isMe ? 'You' : p.user?.displayName || p.user?.username || 'User'}
             </Text>
@@ -155,6 +275,20 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 8,
   },
+  remoteNameOverlay: {
+    position: 'absolute',
+    bottom: 24,
+    left: 24,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  remoteNameOverlayText: {
+    color: BrandColors.white,
+    fontSize: 14,
+    fontWeight: '600',
+  },
   waveformWrap: {
     marginTop: 12,
   },
@@ -169,6 +303,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 14,
     gap: 6,
+    zIndex: 10,
   },
   badgeText: {
     color: BrandColors.white,
@@ -193,12 +328,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 6,
     elevation: 8,
+    zIndex: 20,
   },
   localCamOff: {
-    alignItems: 'center',
-    gap: 6,
-  },
-  localVideoActive: {
     alignItems: 'center',
     gap: 6,
   },
@@ -214,6 +346,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
     borderRadius: 8,
     padding: 3,
+    zIndex: 21,
   },
   groupGridContainer: {
     flex: 1,
@@ -237,6 +370,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: 'transparent',
     position: 'relative',
+    overflow: 'hidden',
   },
   groupTileSpeaking: {
     borderColor: BrandColors.cyan,
@@ -246,6 +380,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     marginTop: 8,
+    zIndex: 5,
   },
   groupMuteBadge: {
     position: 'absolute',
@@ -254,5 +389,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
     borderRadius: 10,
     padding: 4,
+    zIndex: 10,
   },
 });

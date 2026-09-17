@@ -79,4 +79,9 @@ export interface ICallService {
    * Clear call history
    */
   clearCallHistory(): Promise<void>;
+
+  /**
+   * Get authenticated or active local user ID
+   */
+  getCurrentUserId?(): string;
 }

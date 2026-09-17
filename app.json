@@ -31,6 +31,16 @@
       "output": "single",
       "favicon": "./assets/favicon.png"
     },
-    "plugins": []
+    "plugins": [
+      "@config-plugins/react-native-webrtc",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 24
+          }
+        }
+      ]
+    ]
   }
 }
