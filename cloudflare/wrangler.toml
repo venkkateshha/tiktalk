@@ -1,0 +1,19 @@
+name = "tiktalk-media-edge"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# Cloudflare R2 Bucket Binding
+[[r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "tiktalk-media"
+
+[vars]
+# Live Cloudflare Worker URL for public CDN media streaming
+PUBLIC_CDN_URL = "https://tiktalk-media-edge.tiktalk67725.workers.dev"
+ALLOWED_ORIGIN = "https://tiktalk.art"
+ALLOWED_ORIGINS = "https://tiktalk.art,https://www.tiktalk.art,https://admin.tiktalk.art"
+
+# Cron Trigger: invokes the Worker's scheduled() handler (expired Story media cleanup).
+# "0 * * * *" = hourly at minute 0, UTC. Only becomes active after the Worker is deployed.
+[triggers]
+crons = ["0 * * * *"]
