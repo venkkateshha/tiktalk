@@ -6,7 +6,12 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Message, Conversation, MessageType } from '../../../domain/chat';
-import { IChatService, chatService, ChatCoordinator } from '../../../services/chat';
+import {
+  IChatService,
+  chatService,
+  ChatCoordinator,
+  firestoreChatRealtimeGateway,
+} from '../../../services/chat';
 
 export interface UseChatThreadProps {
   conversationId: string;
@@ -74,18 +79,101 @@ export function useChatThread({
     loadThread();
   }, [loadThread]);
 
+  // Remote Firestore Realtime conversation-scoped subscription
+  useEffect(() => {
+    if (!conversationId) return;
+
+    const unsubscribeRealtime = firestoreChatRealtimeGateway.subscribeToConversation(
+      conversationId,
+      (event: any) => {
+        if (event.conversationId !== conversationId) return;
+
+        if (event.type === 'message_received') {
+          const raw = event.message || event.data;
+          if (!raw) return;
+
+          const incoming: Message = raw.conversation_id
+            ? {
+                id: raw.id,
+                conversationId: raw.conversation_id,
+                senderId: raw.sender_id,
+                sender: raw.sender
+                  ? {
+                      id: raw.sender.id,
+                      username: raw.sender.username,
+                      displayName: raw.sender.display_name,
+                      avatarUrl: raw.sender.avatar_url || undefined,
+                      verificationStatus: raw.sender.verification_status || 'none',
+                      isCreator: Boolean(raw.sender.is_creator),
+                      createdAt: raw.sender.created_at || new Date().toISOString(),
+                    }
+                  : undefined,
+                type: raw.type || 'text',
+                text: raw.text || '',
+                mediaUrl: raw.media_url || undefined,
+                mediaDuration: raw.media_duration ? Number(raw.media_duration) : undefined,
+                deliveryStatus: raw.delivery_status || 'sent',
+                isRead: raw.delivery_status === 'read',
+                replyTo: raw.reply_to_id
+                  ? { messageId: raw.reply_to_id, senderId: '', senderName: '', previewText: '' }
+                  : undefined,
+                reactions: [],
+                localId: raw.local_id || undefined,
+                createdAt: raw.created_at || new Date().toISOString(),
+              }
+            : raw;
+
+          ChatCoordinator.notify({
+            type: 'message_received',
+            conversationId,
+            messageId: incoming.id,
+            message: incoming,
+          });
+        } else if (event.type === 'typing') {
+          ChatCoordinator.notify({
+            type: 'typing_changed',
+            conversationId,
+            typing: {
+              conversationId,
+              userId: event.userId || '',
+              username: event.username || '',
+              isTyping: Boolean(event.data?.isTyping ?? event.isTyping),
+            },
+          });
+        }
+      }
+    );
+
+    return () => {
+      unsubscribeRealtime();
+    };
+  }, [conversationId]);
+
   // Subscribe to ChatCoordinator
   useEffect(() => {
     const unsubscribe = ChatCoordinator.subscribe((event) => {
       if (event.conversationId !== conversationId) return;
 
-      if (event.type === 'message_sent' && event.message) {
+      if (
+        (event.type === 'message_sent' || event.type === 'message_received') &&
+        event.message
+      ) {
         setMessages((prev) => {
-          if (prev.some((m) => m.id === event.message!.id || (m.localId && m.localId === event.message!.localId))) {
+          if (
+            prev.some(
+              (m) =>
+                m.id === event.message!.id ||
+                (m.localId && event.message!.localId && m.localId === event.message!.localId)
+            )
+          ) {
             return prev;
           }
           return [...prev, event.message!];
         });
+
+        if (event.type === 'message_received') {
+          service.markConversationAsRead(conversationId).catch(() => {});
+        }
       } else if (
         (event.type === 'message_delivered' || event.type === 'message_failed') &&
         event.message
@@ -124,7 +212,7 @@ export function useChatThread({
       unsubscribe();
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     };
-  }, [conversationId]);
+  }, [conversationId, service]);
 
   const loadMoreMessages = useCallback(async () => {
     if (!hasMore || !nextCursor || isLoading) return;
@@ -144,19 +232,33 @@ export function useChatThread({
 
       const replyToId = replyingTo?.id;
       setReplyingTo(null);
+      setErrorMessage(null);
 
       try {
+        let recipientId: string | undefined;
+        if (conversation?.type === 'direct' && Array.isArray(conversation.participants)) {
+          const currentUid = (service as any).currentAuthenticatedUser?.id;
+          const other = conversation.participants.find((p: any) => {
+            const pid = typeof p === 'string' ? p : p?.userId;
+            return pid && pid !== currentUid;
+          });
+          if (other) {
+            recipientId = typeof other === 'string' ? other : other.userId;
+          }
+        }
+
         await service.sendMessage(conversationId, {
           text,
           type,
           mediaUrl,
           replyToId,
+          recipientId,
         });
-      } catch {
-        // Safe execution
+      } catch (err: any) {
+        setErrorMessage(err?.message || 'Failed to send message');
       }
     },
-    [conversationId, replyingTo, service]
+    [conversationId, conversation, replyingTo, service]
   );
 
   const retryMessage = useCallback(

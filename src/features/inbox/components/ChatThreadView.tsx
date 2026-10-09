@@ -26,6 +26,7 @@ import { useChatThread } from '../hooks/useChatThread';
 import { MessageBubble } from './MessageBubble';
 import { MessageInput } from './MessageInput';
 import { useCallContext } from '../../../features/calls/context/CallContext';
+import { useAuth } from '../../auth/context/AuthContext';
 
 export interface ChatThreadViewProps {
   conversationId: string;
@@ -39,6 +40,8 @@ export const ChatThreadView: React.FC<ChatThreadViewProps> = ({
   onProfilePress,
 }) => {
   const { theme, typography } = useTheme();
+  const { user, session } = useAuth();
+  const currentUserId = user?.id || session?.user?.id || '';
   const [isMenuVisible, setIsMenuVisible] = useState<boolean>(false);
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -48,6 +51,7 @@ export const ChatThreadView: React.FC<ChatThreadViewProps> = ({
     isLoading,
     replyingTo,
     isOtherTyping,
+    errorMessage,
     sendMessage,
     retryMessage,
     deleteMessage,
@@ -59,7 +63,7 @@ export const ChatThreadView: React.FC<ChatThreadViewProps> = ({
 
   const isDirect = conversation?.type === 'direct';
   const otherParticipant = isDirect
-    ? conversation.participants.find((p) => p.userId !== 'me') || conversation.participants[0]
+    ? conversation.participants.find((p) => p.userId !== currentUserId) || conversation.participants[0]
     : null;
 
   const title = isDirect
@@ -79,7 +83,10 @@ export const ChatThreadView: React.FC<ChatThreadViewProps> = ({
 
   const handleVideoCall = () => {
     if (!otherParticipant || isCallActive) return;
-    startCall(conversationId, 'video', otherParticipant.userId).catch(() => {});
+    const recipientId = otherParticipant.userId;
+    startCall(conversationId, 'video', recipientId).catch((err) => {
+      console.warn('[ChatThreadView] startCall error:', err);
+    });
   };
 
   // Auto-scroll to bottom when messages update
@@ -257,6 +264,16 @@ export const ChatThreadView: React.FC<ChatThreadViewProps> = ({
         )}
       </ScrollView>
 
+      {/* Error Banner */}
+      {errorMessage && (
+        <View style={[styles.errorBanner, { backgroundColor: theme.surface, borderTopColor: BrandColors.pink }]}>
+          <Ionicons name="alert-circle-outline" size={16} color={BrandColors.pink} />
+          <Text style={[styles.errorText, { color: BrandColors.pink, fontSize: typography.fontSize.xs }]}>
+            {errorMessage}
+          </Text>
+        </View>
+      )}
+
       {/* 3. Blocked Banner or Composer */}
       {isBlocked ? (
         <View style={[styles.blockedBanner, { backgroundColor: theme.surface, borderTopColor: theme.border }]}>
@@ -422,6 +439,18 @@ const styles = StyleSheet.create({
   blockedText: {
     flex: 1,
     lineHeight: 16,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    gap: 8,
+  },
+  errorText: {
+    flex: 1,
+    fontWeight: '500',
   },
   modalBackdrop: {
     flex: 1,
