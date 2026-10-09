@@ -344,10 +344,19 @@ export const DEFAULT_TRUSTED_ORIGINS = new Set([
 
 export function normalizeOrigin(origin) {
   if (!origin || typeof origin !== 'string') return '';
+  const trimmed = origin.trim();
+  const lower = trimmed.toLowerCase();
+  if (lower === '' || lower === 'null' || lower === '*' || lower === 'undefined') {
+    return '';
+  }
   try {
-    return new URL(origin).origin;
+    const parsed = new URL(trimmed);
+    if (parsed.origin === 'null' || !parsed.protocol.startsWith('http')) {
+      return '';
+    }
+    return parsed.origin;
   } catch {
-    return origin.trim().replace(/\/+$/, '');
+    return trimmed.replace(/\/+$/, '');
   }
 }
 
@@ -359,12 +368,20 @@ export function getTrustedOrigins(env) {
     if (typeof raw === 'string') {
       const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
       for (const part of parts) {
-        if (part !== '*') {
-          trusted.add(normalizeOrigin(part));
+        if (part !== '*' && part.toLowerCase() !== 'null' && part.toLowerCase() !== 'undefined') {
+          const norm = normalizeOrigin(part);
+          if (norm && norm.toLowerCase() !== 'null') {
+            trusted.add(norm);
+          }
         }
       }
     }
   }
+
+  // Defensively ensure invalid, empty, wildcard, or null origins can NEVER be trusted
+  trusted.delete('');
+  trusted.delete('null');
+  trusted.delete('*');
 
   return trusted;
 }
@@ -379,11 +396,21 @@ export function buildCorsHeaders(request, env) {
     return headers;
   }
 
-  const normalized = normalizeOrigin(requestOrigin);
+  const trimmed = requestOrigin.trim();
+  const lower = trimmed.toLowerCase();
+  if (lower === '' || lower === 'null' || lower === 'undefined') {
+    return headers;
+  }
+
+  const normalized = normalizeOrigin(trimmed);
+  if (!normalized || normalized.toLowerCase() === 'null') {
+    return headers;
+  }
+
   const trustedOrigins = getTrustedOrigins(env);
 
   if (trustedOrigins.has(normalized)) {
-    headers['Access-Control-Allow-Origin'] = requestOrigin;
+    headers['Access-Control-Allow-Origin'] = normalized;
     headers['Access-Control-Allow-Methods'] = 'GET, HEAD, POST, DELETE, OPTIONS';
     headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Range, X-Requested-With';
     headers['Access-Control-Expose-Headers'] = 'Content-Range, Content-Length, Accept-Ranges, ETag';
@@ -409,9 +436,10 @@ export default {
     if (request.method === 'OPTIONS') {
       const requestOrigin = request.headers.get('Origin');
       if (requestOrigin) {
-        const normalized = normalizeOrigin(requestOrigin);
+        const trimmed = requestOrigin.trim();
+        const normalized = normalizeOrigin(trimmed);
         const trustedOrigins = getTrustedOrigins(env);
-        if (!trustedOrigins.has(normalized)) {
+        if (!normalized || trimmed.toLowerCase() === 'null' || !trustedOrigins.has(normalized)) {
           return new Response(JSON.stringify({ error: 'CORS origin not allowed' }), {
             status: 403,
             headers: {

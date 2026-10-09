@@ -1,17 +1,18 @@
 /**
  * TikTalk Problem 13 Targeted Test:
- * Cloudflare Worker CORS Security Hardening
+ * Cloudflare Worker CORS Security Hardening & Null-Origin Hotfix
  *
  * Verifies:
  * 1. Production defaults do not trust localhost or 127.0.0.1
  * 2. The Worker resource-host URL is not trusted solely because it is the resource host
  * 3. Verified production web origins remain allowed with expected CORS headers
  * 4. Explicit local development configuration can allow required local origins without leaking them into production
- * 5. Arbitrary origins are never reflected
- * 6. OPTIONS preflights allow only intended methods and headers, rejecting untrusted origins
- * 7. Requests without Origin (e.g. native mobile apps, CLI, internal jobs) operate safely subject to existing authentication
- * 8. Credential-related headers are never combined with wildcard (*) origins
- * 9. Existing authentication, authorization, and media protection invariants remain intact
+ * 5. Arbitrary and malicious origins are blocked with NO Access-Control-Allow-Origin emitted
+ * 6. Explicit literal Origin: "null" is strictly blocked with NO Access-Control-Allow-Origin (never "null")
+ * 7. Requests without Origin (e.g. native mobile apps, CLI, internal jobs) operate safely without ACAO
+ * 8. Access-Control-Allow-Origin is strictly ABSENT (not emitted, not string "null") for untrusted/missing origins
+ * 9. Credential-related headers are never emitted for untrusted origins or combined with wildcard (*) origins
+ * 10. Existing authentication, authorization, and media protection invariants remain intact
  */
 
 import { describe, it } from 'node:test';
@@ -32,7 +33,7 @@ fs.copyFileSync(workerFilePath, tmpWorker);
 const mod = await import(pathToFileURL(tmpWorker).href);
 try { fs.unlinkSync(tmpWorker); } catch {}
 const worker = mod.default;
-const { DEFAULT_TRUSTED_ORIGINS, getTrustedOrigins } = mod;
+const { DEFAULT_TRUSTED_ORIGINS, getTrustedOrigins, normalizeOrigin } = mod;
 
 // Setup test mocks and environment
 const PROJECT = 'tiktalk-test-proj';
@@ -83,7 +84,60 @@ const mockEnv = {
   },
 };
 
-describe('Problem 13 — Cloudflare Worker CORS Security Hardening', () => {
+/**
+ * Validates that Access-Control-Allow-Origin and credential headers are completely ABSENT:
+ * 1. res.headers.has('Access-Control-Allow-Origin') is false
+ * 2. res.headers.get('Access-Control-Allow-Origin') is null (absent in Fetch API)
+ * 3. res.headers.get('Access-Control-Allow-Origin') is NEVER the string "null"
+ * 4. res.headers.has('Access-Control-Allow-Credentials') is false
+ */
+function assertCorsAbsent(res, context = '') {
+  assert.strictEqual(
+    res.headers.has('Access-Control-Allow-Origin'),
+    false,
+    `Access-Control-Allow-Origin header must be completely ABSENT ${context}`
+  );
+  assert.strictEqual(
+    res.headers.get('Access-Control-Allow-Origin'),
+    null,
+    `res.headers.get('Access-Control-Allow-Origin') must be null (absent) ${context}`
+  );
+  assert.notStrictEqual(
+    res.headers.get('Access-Control-Allow-Origin'),
+    'null',
+    `Access-Control-Allow-Origin must NEVER be emitted as the string "null" ${context}`
+  );
+  assert.strictEqual(
+    res.headers.has('Access-Control-Allow-Credentials'),
+    false,
+    `Access-Control-Allow-Credentials must be completely ABSENT ${context}`
+  );
+}
+
+function assertCorsAllowed(res, expectedOrigin) {
+  assert.strictEqual(
+    res.headers.has('Access-Control-Allow-Origin'),
+    true,
+    `Access-Control-Allow-Origin must be present for trusted origin ${expectedOrigin}`
+  );
+  assert.strictEqual(
+    res.headers.get('Access-Control-Allow-Origin'),
+    expectedOrigin,
+    `Access-Control-Allow-Origin must equal ${expectedOrigin}`
+  );
+  assert.strictEqual(
+    res.headers.get('Access-Control-Allow-Credentials'),
+    'true',
+    'Access-Control-Allow-Credentials must be "true" for trusted origin'
+  );
+  assert.strictEqual(
+    res.headers.get('Vary'),
+    'Origin',
+    'Vary: Origin must be present'
+  );
+}
+
+describe('Problem 13 — Cloudflare Worker CORS Security Hardening & Null-Origin Hotfix', () => {
 
   describe('1. Static Configuration Verification', () => {
     it('wrangler.toml does not configure ALLOWED_ORIGIN as wildcard (*)', () => {
@@ -140,6 +194,7 @@ describe('Problem 13 — Cloudflare Worker CORS Security Hardening', () => {
         DEFAULT_TRUSTED_ORIGINS.has('https://tiktalk-media-edge.tiktalk67725.workers.dev'),
         false
       );
+      assert.strictEqual(DEFAULT_TRUSTED_ORIGINS.has('null'), false);
     });
 
     it('worker.js has zero arbitrary origin reflection', () => {
@@ -168,9 +223,7 @@ describe('Problem 13 — Cloudflare Worker CORS Security Hardening', () => {
         const res = await worker.fetch(req, mockEnv);
 
         assert.strictEqual(res.status, 200);
-        assert.strictEqual(res.headers.get('Access-Control-Allow-Origin'), origin);
-        assert.strictEqual(res.headers.get('Access-Control-Allow-Credentials'), 'true');
-        assert.strictEqual(res.headers.get('Vary'), 'Origin');
+        assertCorsAllowed(res, origin);
       });
 
       it(`Allows verified production origin: ${origin} on OPTIONS preflight`, async () => {
@@ -185,7 +238,7 @@ describe('Problem 13 — Cloudflare Worker CORS Security Hardening', () => {
         const res = await worker.fetch(req, mockEnv);
 
         assert.strictEqual(res.status, 204);
-        assert.strictEqual(res.headers.get('Access-Control-Allow-Origin'), origin);
+        assertCorsAllowed(res, origin);
         assert.strictEqual(
           res.headers.get('Access-Control-Allow-Methods'),
           'GET, HEAD, POST, DELETE, OPTIONS'
@@ -193,7 +246,6 @@ describe('Problem 13 — Cloudflare Worker CORS Security Hardening', () => {
         assert.ok(res.headers.get('Access-Control-Allow-Headers').includes('Authorization'));
         assert.ok(res.headers.get('Access-Control-Allow-Headers').includes('Content-Type'));
         assert.strictEqual(res.headers.get('Access-Control-Max-Age'), '86400');
-        assert.strictEqual(res.headers.get('Vary'), 'Origin');
       });
     }
   });
@@ -213,22 +265,19 @@ describe('Problem 13 — Cloudflare Worker CORS Security Hardening', () => {
     ];
 
     for (const origin of nonProductionOrigins) {
-      it(`Production defaults reject: ${origin} on GET /health`, async () => {
+      it(`Production defaults reject: ${origin} on GET /health (ACAO completely absent)`, async () => {
         const req = new Request('https://edge.dev/health', {
           method: 'GET',
           headers: { Origin: origin },
         });
         const res = await worker.fetch(req, mockEnv);
 
-        assert.strictEqual(
-          res.headers.get('Access-Control-Allow-Origin'),
-          null,
-          `Production default must NOT return Access-Control-Allow-Origin for ${origin}`
-        );
+        assert.strictEqual(res.status, 200);
+        assertCorsAbsent(res, `for ${origin}`);
         assert.strictEqual(res.headers.get('Vary'), 'Origin');
       });
 
-      it(`Production defaults reject OPTIONS preflight with 403 Forbidden for: ${origin}`, async () => {
+      it(`Production defaults reject OPTIONS preflight with 403 Forbidden for: ${origin} (ACAO absent)`, async () => {
         const req = new Request('https://edge.dev/upload/video', {
           method: 'OPTIONS',
           headers: {
@@ -239,7 +288,7 @@ describe('Problem 13 — Cloudflare Worker CORS Security Hardening', () => {
         const res = await worker.fetch(req, mockEnv);
 
         assert.strictEqual(res.status, 403);
-        assert.strictEqual(res.headers.get('Access-Control-Allow-Origin'), null);
+        assertCorsAbsent(res, `for preflight ${origin}`);
         assert.strictEqual(res.headers.get('Vary'), 'Origin');
       });
     }
@@ -260,7 +309,7 @@ describe('Problem 13 — Cloudflare Worker CORS Security Hardening', () => {
         headers: { Origin: hostOrigin },
       });
       const res = await worker.fetch(req, mockEnv);
-      assert.strictEqual(res.headers.get('Access-Control-Allow-Origin'), null);
+      assertCorsAbsent(res, 'for resource host');
     });
   });
 
@@ -278,18 +327,15 @@ describe('Problem 13 — Cloudflare Worker CORS Security Hardening', () => {
       });
       const devRes = await worker.fetch(devReq, devEnv);
       assert.strictEqual(devRes.status, 200);
-      assert.strictEqual(
-        devRes.headers.get('Access-Control-Allow-Origin'),
-        'http://localhost:8081'
-      );
+      assertCorsAllowed(devRes, 'http://localhost:8081');
 
-      // In production environment: localhost:8081 remains strictly rejected
+      // In production environment: localhost:8081 remains strictly absent
       const prodReq = new Request('https://edge.dev/health', {
         method: 'GET',
         headers: { Origin: 'http://localhost:8081' },
       });
       const prodRes = await worker.fetch(prodReq, mockEnv);
-      assert.strictEqual(prodRes.headers.get('Access-Control-Allow-Origin'), null);
+      assertCorsAbsent(prodRes, 'in production for localhost:8081');
     });
 
     it('Allows local development preflight OPTIONS when explicitly configured in development env', async () => {
@@ -307,40 +353,33 @@ describe('Problem 13 — Cloudflare Worker CORS Security Hardening', () => {
       });
       const devRes = await worker.fetch(devReq, devEnv);
       assert.strictEqual(devRes.status, 204);
-      assert.strictEqual(
-        devRes.headers.get('Access-Control-Allow-Origin'),
-        'http://localhost:8081'
-      );
+      assertCorsAllowed(devRes, 'http://localhost:8081');
     });
   });
 
-  describe('5. Arbitrary and Malicious Origins are Blocked', () => {
+  describe('5. Arbitrary and Malicious Origins are Blocked with Absent ACAO', () => {
     const untrustedOrigins = [
       'https://evil-attacker.com',
       'https://attacker.net',
       'https://tiktalk.art.evil.com',
       'https://fake-tiktalk.art',
       'http://attacker-controlled-site.org',
-      'null',
     ];
 
     for (const origin of untrustedOrigins) {
-      it(`Never reflects untrusted origin on GET: ${origin}`, async () => {
+      it(`Never emits ACAO for untrusted origin on GET: ${origin}`, async () => {
         const req = new Request('https://edge.dev/health', {
           method: 'GET',
           headers: { Origin: origin },
         });
         const res = await worker.fetch(req, mockEnv);
 
-        assert.strictEqual(
-          res.headers.get('Access-Control-Allow-Origin'),
-          null,
-          `Untrusted origin ${origin} must NOT be returned in Access-Control-Allow-Origin`
-        );
+        assert.strictEqual(res.status, 200);
+        assertCorsAbsent(res, `for untrusted origin ${origin}`);
         assert.strictEqual(res.headers.get('Vary'), 'Origin');
       });
 
-      it(`Rejects OPTIONS preflight with 403 Forbidden for untrusted origin: ${origin}`, async () => {
+      it(`Rejects OPTIONS preflight with 403 Forbidden and absent ACAO for untrusted origin: ${origin}`, async () => {
         const req = new Request('https://edge.dev/upload/story', {
           method: 'OPTIONS',
           headers: {
@@ -351,52 +390,49 @@ describe('Problem 13 — Cloudflare Worker CORS Security Hardening', () => {
         const res = await worker.fetch(req, mockEnv);
 
         assert.strictEqual(res.status, 403);
-        assert.strictEqual(
-          res.headers.get('Access-Control-Allow-Origin'),
-          null,
-          `Untrusted origin ${origin} must NOT receive Access-Control-Allow-Origin on preflight`
-        );
+        assertCorsAbsent(res, `for untrusted preflight ${origin}`);
         assert.strictEqual(res.headers.get('Vary'), 'Origin');
       });
     }
   });
 
   describe('6. Safe Handling of Requests Without Origin Header', () => {
-    it('Succeeds on GET /health without Origin header', async () => {
+    it('Succeeds on GET /health without Origin header (ACAO absent)', async () => {
       const req = new Request('https://edge.dev/health', { method: 'GET' });
       const res = await worker.fetch(req, mockEnv);
 
       assert.strictEqual(res.status, 200);
       const data = await res.json();
       assert.strictEqual(data.status, 'online');
-      assert.strictEqual(res.headers.get('Access-Control-Allow-Origin'), null);
+      assertCorsAbsent(res, 'for request without Origin header');
       assert.strictEqual(res.headers.get('Vary'), 'Origin');
     });
 
-    it('Succeeds on public media GET /videos/sample.mp4 without Origin header', async () => {
+    it('Succeeds on public media GET /videos/sample.mp4 without Origin header (ACAO absent)', async () => {
       const req = new Request('https://edge.dev/videos/sample.mp4', { method: 'GET' });
       const res = await worker.fetch(req, mockEnv);
 
       assert.strictEqual(res.status, 200);
-      assert.strictEqual(res.headers.get('Access-Control-Allow-Origin'), null);
+      assertCorsAbsent(res, 'for public media without Origin header');
       assert.strictEqual(res.headers.get('Vary'), 'Origin');
     });
 
-    it('Handles OPTIONS without Origin header gracefully', async () => {
+    it('Handles OPTIONS without Origin header gracefully (ACAO absent)', async () => {
       const req = new Request('https://edge.dev/videos/sample.mp4', { method: 'OPTIONS' });
       const res = await worker.fetch(req, mockEnv);
 
       assert.strictEqual(res.status, 204);
-      assert.strictEqual(res.headers.get('Access-Control-Allow-Origin'), null);
+      assertCorsAbsent(res, 'for OPTIONS without Origin header');
       assert.strictEqual(res.headers.get('Vary'), 'Origin');
     });
   });
 
   describe('7. Credential Safety and Zero Wildcard Policy', () => {
-    it('Never returns wildcard (*) as Access-Control-Allow-Origin', async () => {
+    it('Never returns wildcard (*) or string "null" as Access-Control-Allow-Origin', async () => {
       const originsToTest = [
         'https://tiktalk.art',
         'https://evil.com',
+        'null',
         '',
         undefined,
       ];
@@ -410,6 +446,11 @@ describe('Problem 13 — Cloudflare Worker CORS Security Hardening', () => {
           res.headers.get('Access-Control-Allow-Origin'),
           '*',
           'Access-Control-Allow-Origin must NEVER be wildcard (*)'
+        );
+        assert.notStrictEqual(
+          res.headers.get('Access-Control-Allow-Origin'),
+          'null',
+          'Access-Control-Allow-Origin must NEVER be string "null"'
         );
       }
     });
@@ -427,7 +468,7 @@ describe('Problem 13 — Cloudflare Worker CORS Security Hardening', () => {
       });
       const res = await worker.fetch(req, wildcardEnv);
 
-      assert.strictEqual(res.headers.get('Access-Control-Allow-Origin'), null);
+      assertCorsAbsent(res, 'with wildcard env');
     });
   });
 
@@ -456,6 +497,110 @@ describe('Problem 13 — Cloudflare Worker CORS Security Hardening', () => {
       });
       const res = await worker.fetch(req, mockEnv);
       assert.strictEqual(res.status, 403, 'Raw /stories/* path must remain blocked');
+    });
+  });
+
+  describe('9. Explicit Null-Origin Security Tests (CORS Null-Origin Hotfix)', () => {
+    it('normalizeOrigin maps literal "null", " null ", empty, and opaque origins to empty string', () => {
+      assert.strictEqual(normalizeOrigin('null'), '');
+      assert.strictEqual(normalizeOrigin(' null '), '');
+      assert.strictEqual(normalizeOrigin('NULL'), '');
+      assert.strictEqual(normalizeOrigin(''), '');
+      assert.strictEqual(normalizeOrigin('   '), '');
+      assert.strictEqual(normalizeOrigin('*'), '');
+      assert.strictEqual(normalizeOrigin('data:text/html,payload'), '');
+      assert.strictEqual(normalizeOrigin('about:blank'), '');
+    });
+
+    it('getTrustedOrigins never includes "null" or empty string even if configured in env', () => {
+      const envWithNull = {
+        ...mockEnv,
+        ALLOWED_ORIGIN: 'null',
+        ALLOWED_ORIGINS: 'null, https://evil.com, *',
+      };
+      const trusted = getTrustedOrigins(envWithNull);
+      assert.strictEqual(trusted.has('null'), false);
+      assert.strictEqual(trusted.has(''), false);
+      assert.strictEqual(trusted.has('*'), false);
+    });
+
+    it('Rejects literal Origin: "null" on GET /health with completely ABSENT ACAO (never "null")', async () => {
+      const req = new Request('https://edge.dev/health', {
+        method: 'GET',
+        headers: { Origin: 'null' },
+      });
+      const res = await worker.fetch(req, mockEnv);
+
+      assert.strictEqual(res.status, 200);
+      assertCorsAbsent(res, 'for literal Origin: "null" on GET /health');
+      assert.strictEqual(res.headers.get('Vary'), 'Origin');
+    });
+
+    it('Rejects literal Origin: "null" on OPTIONS preflight with 403 Forbidden and completely ABSENT ACAO', async () => {
+      const req = new Request('https://edge.dev/upload/video', {
+        method: 'OPTIONS',
+        headers: {
+          Origin: 'null',
+          'Access-Control-Request-Method': 'POST',
+        },
+      });
+      const res = await worker.fetch(req, mockEnv);
+
+      assert.strictEqual(res.status, 403);
+      assertCorsAbsent(res, 'for literal Origin: "null" on OPTIONS /upload/video');
+      assert.strictEqual(res.headers.get('Vary'), 'Origin');
+    });
+
+    it('Rejects literal Origin: "null" on OPTIONS /upload/story with 403 Forbidden and completely ABSENT ACAO', async () => {
+      const req = new Request('https://edge.dev/upload/story', {
+        method: 'OPTIONS',
+        headers: {
+          Origin: 'null',
+          'Access-Control-Request-Method': 'POST',
+        },
+      });
+      const res = await worker.fetch(req, mockEnv);
+
+      assert.strictEqual(res.status, 403);
+      assertCorsAbsent(res, 'for literal Origin: "null" on OPTIONS /upload/story');
+      assert.strictEqual(res.headers.get('Vary'), 'Origin');
+    });
+
+    it('Rejects literal Origin: "null" on media GET /videos/sample.mp4 with completely ABSENT ACAO', async () => {
+      const req = new Request('https://edge.dev/videos/sample.mp4', {
+        method: 'GET',
+        headers: { Origin: 'null' },
+      });
+      const res = await worker.fetch(req, mockEnv);
+
+      assert.strictEqual(res.status, 200);
+      assertCorsAbsent(res, 'for literal Origin: "null" on GET /videos/sample.mp4');
+      assert.strictEqual(res.headers.get('Vary'), 'Origin');
+    });
+
+    it('Requires authorization on POST /upload/story even with Origin: "null", with ABSENT ACAO', async () => {
+      const req = new Request('https://edge.dev/upload/story', {
+        method: 'POST',
+        headers: { Origin: 'null' },
+      });
+      const res = await worker.fetch(req, mockEnv);
+
+      assert.strictEqual(res.status, 401);
+      assertCorsAbsent(res, 'for unauthorized POST with Origin: "null"');
+      assert.strictEqual(res.headers.get('Vary'), 'Origin');
+    });
+
+    it('Confirms trusted origins remain strictly allowed alongside null-origin defenses', async () => {
+      const trusted = ['https://tiktalk.art', 'https://www.tiktalk.art', 'https://admin.tiktalk.art'];
+      for (const origin of trusted) {
+        const req = new Request('https://edge.dev/health', {
+          method: 'GET',
+          headers: { Origin: origin },
+        });
+        const res = await worker.fetch(req, mockEnv);
+        assert.strictEqual(res.status, 200);
+        assertCorsAllowed(res, origin);
+      }
     });
   });
 });
