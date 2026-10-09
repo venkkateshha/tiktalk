@@ -480,4 +480,94 @@ describe('Real Firestore Security Rules Emulator Tests — Chat System', () => {
       })
     );
   });
+
+  it('P10: Text-only message with no media fields creates conversation and message successfully in emulator', async () => {
+    const aliceDb = testEnv.authenticatedContext('user_alice').firestore();
+    const convData = {
+      id: 'conv_alice_bob_text',
+      type: 'direct',
+      participantIds: ['user_alice', 'user_bob'],
+      lastMessage: {
+        id: 'msg_1',
+        conversationId: 'conv_alice_bob_text',
+        senderId: 'user_alice',
+        type: 'text',
+        text: 'Hello Bob',
+        deliveryStatus: 'sent',
+        isRead: false,
+        createdAt: new Date().toISOString(),
+      },
+      updatedAt: new Date().toISOString(),
+    };
+
+    await assertSucceeds(
+      setDoc(doc(aliceDb, 'conversations', 'conv_alice_bob_text'), convData, { merge: true })
+    );
+
+    const messageData = {
+      id: 'msg_1',
+      conversationId: 'conv_alice_bob_text',
+      conversation_id: 'conv_alice_bob_text',
+      senderId: 'user_alice',
+      sender_id: 'user_alice',
+      recipientId: 'user_bob',
+      recipient_id: 'user_bob',
+      participantIds: ['user_alice', 'user_bob'],
+      participant_ids: ['user_alice', 'user_bob'],
+      type: 'text',
+      text: 'Hello Bob',
+      deliveryStatus: 'sent',
+      createdAt: new Date().toISOString(),
+    };
+
+    await assertSucceeds(
+      setDoc(doc(aliceDb, 'messages', 'msg_1'), messageData)
+    );
+  });
+
+  it('P11: Media message with valid media fields and numeric zero mediaDuration succeeds in emulator', async () => {
+    const aliceDb = testEnv.authenticatedContext('user_alice').firestore();
+    const convData = {
+      id: 'conv_alice_bob_media',
+      type: 'direct',
+      participantIds: ['user_alice', 'user_bob'],
+      lastMessage: {
+        id: 'msg_2',
+        conversationId: 'conv_alice_bob_media',
+        senderId: 'user_alice',
+        type: 'video',
+        text: '',
+        mediaUrl: 'https://cdn.tiktalk.art/vid.mp4',
+        mediaDuration: 0,
+        deliveryStatus: 'sent',
+        isRead: false,
+        createdAt: new Date().toISOString(),
+      },
+      updatedAt: new Date().toISOString(),
+    };
+
+    await assertSucceeds(
+      setDoc(doc(aliceDb, 'conversations', 'conv_alice_bob_media'), convData, { merge: true })
+    );
+  });
+
+  it('N10: Writing conversation with unsupported undefined property is rejected by Firestore client SDK', async () => {
+    const aliceDb = testEnv.authenticatedContext('user_alice').firestore();
+    const invalidConvData = {
+      id: 'conv_invalid',
+      type: 'direct',
+      participantIds: ['user_alice', 'user_bob'],
+      lastMessage: {
+        id: 'msg_invalid',
+        mediaUrl: undefined,
+      },
+    };
+
+    assert.throws(
+      () => {
+        setDoc(doc(aliceDb, 'conversations', 'conv_invalid'), invalidConvData);
+      },
+      (err) => err?.message?.includes('Unsupported field value: undefined') || err?.code === 'invalid-argument'
+    );
+  });
 });

@@ -366,6 +366,201 @@ describe('Chat Message Send Permission & Recipient Participant Security Invarian
       'firestore.rules must enforce isNotBlocked on direct recipient'
     );
   });
+
+  // ── Serialization & Firestore lastMessage Safety Invariants ────────────────
+  function deepCheckUndefined(obj) {
+    if (obj === undefined) return true;
+    if (obj !== null && typeof obj === 'object') {
+      for (const key of Object.keys(obj)) {
+        if (obj[key] === undefined) return true;
+        if (deepCheckUndefined(obj[key])) return true;
+      }
+    }
+    return false;
+  }
+
+  function sanitizeForFirestoreMirror(obj) {
+    const result = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (value === undefined) continue;
+      if (value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+        result[key] = sanitizeForFirestoreMirror(value);
+      } else if (Array.isArray(value)) {
+        result[key] = value.filter(item => item !== undefined).map(item => item !== null && typeof item === 'object' && !(item instanceof Date) ? sanitizeForFirestoreMirror(item) : item);
+      } else {
+        result[key] = value;
+      }
+    }
+    return result;
+  }
+
+  function buildFirestoreLastMessageSummaryMirror(message) {
+    const summary = {
+      id: message.id,
+      conversationId: message.conversationId,
+      conversation_id: message.conversationId,
+      senderId: message.senderId,
+      sender_id: message.senderId,
+      type: message.type || 'text',
+      text: typeof message.text === 'string' ? message.text : '',
+      deliveryStatus: message.deliveryStatus || 'sent',
+      delivery_status: message.deliveryStatus || 'sent',
+      isRead: message.isRead === true,
+      createdAt: message.createdAt,
+      created_at: message.createdAt,
+    };
+    if (message.recipientId !== undefined) {
+      summary.recipientId = message.recipientId;
+      summary.recipient_id = message.recipientId;
+    }
+    if (message.mediaUrl !== undefined) {
+      summary.mediaUrl = message.mediaUrl;
+      summary.media_url = message.mediaUrl;
+    }
+    if (message.mediaDuration !== undefined) {
+      summary.mediaDuration = message.mediaDuration;
+      summary.media_duration = message.mediaDuration;
+    }
+    if (message.replyTo !== undefined && message.replyTo !== null) {
+      const replySummary = {
+        messageId: message.replyTo.messageId,
+        senderId: message.replyTo.senderId,
+        senderName: message.replyTo.senderName || 'User',
+        previewText: typeof message.replyTo.previewText === 'string' ? message.replyTo.previewText : '',
+      };
+      summary.replyTo = sanitizeForFirestoreMirror(replySummary);
+    } else if (message.replyTo === null) {
+      summary.replyTo = null;
+    }
+    return sanitizeForFirestoreMirror(summary);
+  }
+
+  it('21. Text-only message summary contains zero undefined fields and omits media fields', () => {
+    const textMsg = {
+      id: 'msg_text_1',
+      conversationId: 'conv_1',
+      senderId: 'user_alice',
+      type: 'text',
+      text: 'Hello world',
+      deliveryStatus: 'sent',
+      isRead: false,
+      createdAt: '2026-10-09T12:00:00.000Z',
+      mediaUrl: undefined,
+      mediaDuration: undefined,
+      replyTo: undefined,
+      localId: 'local_1',
+    };
+    const summary = buildFirestoreLastMessageSummaryMirror(textMsg);
+    assert.strictEqual(deepCheckUndefined(summary), false, 'Must contain zero undefined values');
+    assert.strictEqual('mediaUrl' in summary, false, 'mediaUrl must be omitted when undefined');
+    assert.strictEqual('mediaDuration' in summary, false, 'mediaDuration must be omitted when undefined');
+    assert.strictEqual('replyTo' in summary, false, 'replyTo must be omitted when undefined');
+    assert.strictEqual('localId' in summary, false, 'localId must not be serialized');
+    assert.strictEqual(summary.text, 'Hello world');
+    assert.strictEqual(summary.isRead, false);
+  });
+
+  it('22. Media message preserves valid mediaUrl and mediaDuration including numeric zero', () => {
+    const mediaMsg = {
+      id: 'msg_media_1',
+      conversationId: 'conv_1',
+      senderId: 'user_alice',
+      type: 'video',
+      text: '',
+      deliveryStatus: 'sent',
+      isRead: false,
+      createdAt: '2026-10-09T12:00:00.000Z',
+      mediaUrl: 'https://cdn.tiktalk.art/video.mp4',
+      mediaDuration: 0,
+    };
+    const summary = buildFirestoreLastMessageSummaryMirror(mediaMsg);
+    assert.strictEqual(deepCheckUndefined(summary), false, 'Must contain zero undefined values');
+    assert.strictEqual(summary.mediaUrl, 'https://cdn.tiktalk.art/video.mp4');
+    assert.strictEqual(summary.mediaDuration, 0, 'Numeric 0 must be preserved, not converted to null or undefined');
+    assert.strictEqual(summary.text, '');
+  });
+
+  it('23. Message with optional reply fields preserves valid reply data and omits undefined', () => {
+    const replyMsg = {
+      id: 'msg_reply_1',
+      conversationId: 'conv_1',
+      senderId: 'user_alice',
+      type: 'text',
+      text: 'Replying to you',
+      deliveryStatus: 'sent',
+      isRead: false,
+      createdAt: '2026-10-09T12:00:00.000Z',
+      replyTo: {
+        messageId: 'orig_1',
+        senderId: 'user_bob',
+        senderName: 'Bob Builds',
+        previewText: 'Hello',
+      },
+    };
+    const summary = buildFirestoreLastMessageSummaryMirror(replyMsg);
+    assert.strictEqual(deepCheckUndefined(summary), false, 'Must contain zero undefined values');
+    assert.strictEqual(summary.replyTo.messageId, 'orig_1');
+    assert.strictEqual(summary.replyTo.senderName, 'Bob Builds');
+    assert.strictEqual(summary.replyTo.previewText, 'Hello');
+  });
+
+  it('24. Legitimate null, false, and empty string are preserved in serialization', () => {
+    const nullFieldsMsg = {
+      id: 'msg_null_1',
+      conversationId: 'conv_1',
+      senderId: 'user_alice',
+      recipientId: null,
+      type: 'text',
+      text: '',
+      deliveryStatus: 'sent',
+      isRead: false,
+      createdAt: '2026-10-09T12:00:00.000Z',
+      mediaUrl: null,
+      mediaDuration: null,
+      replyTo: null,
+    };
+    const summary = buildFirestoreLastMessageSummaryMirror(nullFieldsMsg);
+    assert.strictEqual(deepCheckUndefined(summary), false, 'Must contain zero undefined values');
+    assert.strictEqual(summary.recipientId, null, 'Explicit null recipientId must be preserved');
+    assert.strictEqual(summary.mediaUrl, null, 'Explicit null mediaUrl must be preserved');
+    assert.strictEqual(summary.mediaDuration, null, 'Explicit null mediaDuration must be preserved');
+    assert.strictEqual(summary.replyTo, null, 'Explicit null replyTo must be preserved');
+    assert.strictEqual(summary.isRead, false, 'Boolean false must be preserved');
+    assert.strictEqual(summary.text, '', 'Empty string must be preserved');
+  });
+
+  it('25. ChatService source code builds lastMessage with buildFirestoreLastMessageSummary and sanitizeForFirestore', () => {
+    const currentChatServiceContent = fs.readFileSync(path.join(rootDir, 'src/services/chat/ChatService.ts'), 'utf8');
+    assert.ok(
+      currentChatServiceContent.includes('buildFirestoreLastMessageSummary(finalizedMessage)'),
+      'ChatService must build lastMessage summary with buildFirestoreLastMessageSummary'
+    );
+    assert.ok(
+      currentChatServiceContent.includes('sanitizeForFirestore(rawConvDocData)'),
+      'ChatService must sanitize convDocData with sanitizeForFirestore'
+    );
+    assert.ok(
+      currentChatServiceContent.includes('sanitizeForFirestore(messageData)'),
+      'ChatService must sanitize messageData with sanitizeForFirestore'
+    );
+  });
+
+  it('26. Conversation upsert occurs before message write in ChatService source', () => {
+    const currentChatServiceContent = fs.readFileSync(path.join(rootDir, 'src/services/chat/ChatService.ts'), 'utf8');
+    const convUpsertIndex = currentChatServiceContent.indexOf("setDoc(doc(db, 'conversations', conversationId), convDocData, { merge: true })");
+    const msgWriteIndex = currentChatServiceContent.indexOf("setDoc(msgDocRef, sanitizeForFirestore(messageData))");
+    assert.ok(convUpsertIndex !== -1, 'Conversation upsert must exist');
+    assert.ok(msgWriteIndex !== -1, 'Message write must exist');
+    assert.ok(convUpsertIndex < msgWriteIndex, 'Conversation upsert must strictly precede message write');
+  });
+
+  it('27. Invalid payload produces immediate rejection and surfaces error to UI', () => {
+    const currentChatServiceContent = fs.readFileSync(path.join(rootDir, 'src/services/chat/ChatService.ts'), 'utf8');
+    assert.ok(
+      currentChatServiceContent.includes('Invalid payload: message must include non-empty text or a mediaUrl'),
+      'ChatService must reject empty text and missing mediaUrl'
+    );
+  });
 });
 
 

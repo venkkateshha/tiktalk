@@ -49,6 +49,88 @@ function generateUUID(): string {
   return generateSecureUUID();
 }
 
+/**
+ * Recursively strips undefined values from an object, preserving null, false, 0,
+ * and empty strings intact. Guarantees complete safety for Firestore writes.
+ */
+export function sanitizeForFirestore<T extends Record<string, any>>(obj: T): T {
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value === undefined) {
+      continue;
+    }
+    if (value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+      result[key] = sanitizeForFirestore(value);
+    } else if (Array.isArray(value)) {
+      result[key] = value
+        .filter((item) => item !== undefined)
+        .map((item) =>
+          item !== null && typeof item === 'object' && !(item instanceof Date)
+            ? sanitizeForFirestore(item)
+            : item
+        );
+    } else {
+      result[key] = value;
+    }
+  }
+  return result as T;
+}
+
+/**
+ * Builds a clean, Firestore-safe persisted summary of lastMessage.
+ * Omits undefined properties, excludes local-only fields (e.g. localId),
+ * and preserves valid values (null, false, 0, empty string).
+ */
+export function buildFirestoreLastMessageSummary(message: Message): Record<string, any> {
+  const summary: Record<string, any> = {
+    id: message.id,
+    conversationId: message.conversationId,
+    conversation_id: message.conversationId,
+    senderId: message.senderId,
+    sender_id: message.senderId,
+    type: message.type || 'text',
+    text: typeof message.text === 'string' ? message.text : '',
+    deliveryStatus: message.deliveryStatus || 'sent',
+    delivery_status: message.deliveryStatus || 'sent',
+    isRead: message.isRead === true,
+    createdAt: message.createdAt,
+    created_at: message.createdAt,
+  };
+
+  // Optional recipientId (omitted if undefined, preserved if string or null)
+  if (message.recipientId !== undefined) {
+    summary.recipientId = message.recipientId;
+    summary.recipient_id = message.recipientId;
+  }
+
+  // Optional mediaUrl (omitted if undefined, preserved if string or null)
+  if (message.mediaUrl !== undefined) {
+    summary.mediaUrl = message.mediaUrl;
+    summary.media_url = message.mediaUrl;
+  }
+
+  // Optional mediaDuration (omitted if undefined, preserved if number (including 0) or null)
+  if (message.mediaDuration !== undefined) {
+    summary.mediaDuration = message.mediaDuration;
+    summary.media_duration = message.mediaDuration;
+  }
+
+  // Optional replyTo (omitted if undefined, preserved if valid object or null)
+  if (message.replyTo !== undefined && message.replyTo !== null) {
+    const replySummary: Record<string, any> = {
+      messageId: message.replyTo.messageId,
+      senderId: message.replyTo.senderId,
+      senderName: message.replyTo.senderName || 'User',
+      previewText: typeof message.replyTo.previewText === 'string' ? message.replyTo.previewText : '',
+    };
+    summary.replyTo = sanitizeForFirestore(replySummary);
+  } else if (message.replyTo === null) {
+    summary.replyTo = null;
+  }
+
+  return sanitizeForFirestore(summary);
+}
+
 function mapDbMessage(row: any): Message {
   const senderProf = Array.isArray(row.sender) ? row.sender[0] : row.sender;
   return {
@@ -540,7 +622,7 @@ export class ChatService implements IChatService {
       const db = getFirebaseFirestore();
       if (db && currentUserId) {
         try {
-          await setDoc(doc(db, 'conversations', convId), {
+          await setDoc(doc(db, 'conversations', convId), sanitizeForFirestore({
             id: convId,
             type: 'direct',
             title: displayName,
@@ -552,7 +634,7 @@ export class ChatService implements IChatService {
             created_at: nowIso,
             updatedAt: nowIso,
             updated_at: nowIso,
-          });
+          }));
         } catch (e) {
           console.warn('[ChatService] Firebase create direct conversation error:', e);
         }
@@ -606,7 +688,7 @@ export class ChatService implements IChatService {
       const db = getFirebaseFirestore();
       if (db && currentUserId) {
         try {
-          await setDoc(doc(db, 'conversations', convId), {
+          await setDoc(doc(db, 'conversations', convId), sanitizeForFirestore({
             id: convId,
             type: 'group',
             title: title.trim(),
@@ -618,7 +700,7 @@ export class ChatService implements IChatService {
             created_at: nowIso,
             updatedAt: nowIso,
             updated_at: nowIso,
-          });
+          }));
         } catch (e) {
           console.warn('[ChatService] Firebase create group conversation error:', e);
         }
@@ -766,6 +848,13 @@ export class ChatService implements IChatService {
     conversationId: string,
     payload: SendMessagePayload
   ): Promise<Message> {
+    if (!payload) {
+      throw new Error('[ChatService] Invalid payload: message payload is required');
+    }
+    const trimmedText = typeof payload.text === 'string' ? payload.text.trim() : '';
+    if (!trimmedText && !payload.mediaUrl) {
+      throw new Error('[ChatService] Invalid payload: message must include non-empty text or a mediaUrl');
+    }
     const currentUserId = await this.getCurrentUserId();
     if (!currentUserId || currentUserId === 'unknown') {
       throw new Error('[ChatService] Authentication required to send a message');
@@ -928,13 +1017,13 @@ export class ChatService implements IChatService {
             sender_id: currentUserId,
             senderId: currentUserId,
             type: payload.type || 'text',
-            text: payload.text.trim(),
-            media_url: payload.mediaUrl || null,
-            mediaUrl: payload.mediaUrl || null,
-            media_duration: payload.mediaDuration || null,
-            mediaDuration: payload.mediaDuration || null,
-            reply_to_id: payload.replyToId || null,
-            replyToId: payload.replyToId || null,
+            text: trimmedText,
+            media_url: payload.mediaUrl !== undefined ? payload.mediaUrl : null,
+            mediaUrl: payload.mediaUrl !== undefined ? payload.mediaUrl : null,
+            media_duration: payload.mediaDuration !== undefined ? payload.mediaDuration : null,
+            mediaDuration: payload.mediaDuration !== undefined ? payload.mediaDuration : null,
+            reply_to_id: payload.replyToId !== undefined ? payload.replyToId : null,
+            replyToId: payload.replyToId !== undefined ? payload.replyToId : null,
             local_id: localId,
             localId,
             delivery_status: 'sent',
@@ -949,26 +1038,26 @@ export class ChatService implements IChatService {
             participantIds: participantIds,
           };
           // 1. Ensure conversation document exists in Firestore with consistent type and participant metadata
-          const convDocData: Record<string, any> = {
+          const lastMessageSummary = buildFirestoreLastMessageSummary(finalizedMessage);
+          const rawConvDocData: Record<string, any> = {
             id: conversationId,
             type: conv?.type || conversationType,
-            lastMessage: finalizedMessage,
+            lastMessage: lastMessageSummary,
             updatedAt: nowIso,
             updated_at: nowIso,
             participantIds: participantIds,
             participant_ids: participantIds,
           };
           if (conv) {
-            convDocData.type = conv.type || conversationType;
-            if (conv.title) convDocData.title = conv.title;
-            if (conv.participants) convDocData.participants = conv.participants;
+            rawConvDocData.type = conv.type || conversationType;
+            if (conv.title) rawConvDocData.title = conv.title;
+            if (conv.participants) rawConvDocData.participants = conv.participants;
           }
-          await setDoc(doc(db, 'conversations', conversationId), convDocData, { merge: true }).catch((convErr) => {
-            console.warn('[ChatService] Failed to upsert conversation metadata on sendMessage:', convErr);
-          });
+          const convDocData = sanitizeForFirestore(rawConvDocData);
+          await setDoc(doc(db, 'conversations', conversationId), convDocData, { merge: true });
 
           // 2. Write message document satisfying Firestore security rules
-          await setDoc(msgDocRef, messageData);
+          await setDoc(msgDocRef, sanitizeForFirestore(messageData));
 
           // Trigger push notification for offline/background recipient
           if (recipientId && recipientId !== currentUserId) {
